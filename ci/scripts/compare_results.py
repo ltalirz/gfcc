@@ -48,7 +48,37 @@ for ref_file in ref_files:
         print("ERROR: SCF energy does not match. reference: " + str(ref_scf_energy) + ", current: " + str(cur_scf_energy))
         sys.exit(1)
 
-    if not isclose(ref_ccsd_energy, cur_ccsd_energy):
+    ccsd_threshold = ref_data["input"]["CCSD"]["threshold"]
+    if not isclose(ref_ccsd_energy, cur_ccsd_energy, ccsd_threshold):
         print("ERROR: CCSD correlation energy does not match. reference: " + str(ref_ccsd_energy) + ", current: " + str(cur_ccsd_energy))
         sys.exit(1)
+
+    ref_gfcc_data = ref_data["output"]["GFCCSD"]["retarded_alpha"]
+    cur_gfcc_data = cur_data["output"]["GFCCSD"]["retarded_alpha"]
+
+    ref_nlevels = ref_gfcc_data["nlevels"]
+    cur_nlevels = cur_gfcc_data["nlevels"]
+
+    if ref_nlevels != cur_nlevels:
+        print("ERROR: number of levels in GFCCSD calculation does not match. reference: " + str(ref_nlevels) + ", current: " + str(cur_nlevels))
+        sys.exit(1)
+    
+    ref_omega_npts = ref_gfcc_data["omega_npts"]
+    cur_omega_npts = cur_gfcc_data["omega_npts"]
+
+    if ref_omega_npts != cur_omega_npts:
+        print("ERROR: number of frequency points in GFCCSD calculation does not match. reference: " + str(ref_omega_npts) + ", current: " + str(cur_omega_npts))
+        sys.exit(1)
+    
+    gf_threshold = ref_data["input"]["GFCCSD"]["gf_threshold"]
+    for ni in range(0,ref_omega_npts):
+        ref_w = ref_gfcc_data[str(ni)]["omega"]
+        cur_w = cur_gfcc_data[str(ni)]["omega"]
+        ref_A = ref_gfcc_data[str(ni)]["A_a"]
+        cur_A = cur_gfcc_data[str(ni)]["A_a"]
+
+        if (not isclose(ref_w, cur_w)) or (not isclose(ref_A, cur_A, ccsd_threshold)):
+            print("GFCC ERROR: omega, A_a mismatch. reference (w, A_a): (" + str(ref_w) + "," + str(ref_A) +
+            "), current (w, A_a): (" + str(cur_w) + "," + str(cur_A) + ")")
+            sys.exit(1)        
 

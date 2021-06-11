@@ -106,6 +106,30 @@ std::string gfacc_str(Ts&&...args)
     return res;
 }
 
+void write_results_to_json(ExecutionContext& ec, SystemData& sys_data, int nlevels,
+    std::vector<double>& ni_w, std::vector<double>& ni_A, std::string gfcc_type) {
+
+  auto lomega_npts = ni_w.size();
+  std::vector<double> r_ni_w;
+  std::vector<double> r_ni_A;
+  if(ec.pg().rank()==0) {
+    r_ni_w.resize(lomega_npts,0);
+    r_ni_A.resize(lomega_npts,0);
+  }
+  MPI_Reduce(ni_w.data(), r_ni_w.data(), lomega_npts, MPI_DOUBLE, MPI_SUM, 0, ec.pg().comm());
+  MPI_Reduce(ni_A.data(), r_ni_A.data(), lomega_npts, MPI_DOUBLE, MPI_SUM, 0, ec.pg().comm());
+
+  if(ec.pg().rank() == 0) {
+    sys_data.results["output"]["GFCCSD"][gfcc_type]["nlevels"] = nlevels;
+    sys_data.results["output"]["GFCCSD"][gfcc_type]["omega_npts"] = lomega_npts;
+    for(size_t ni=0;ni<lomega_npts;ni++) {
+      sys_data.results["output"]["GFCCSD"][gfcc_type][std::to_string(ni)]["omega"] = r_ni_w[ni];
+      sys_data.results["output"]["GFCCSD"][gfcc_type][std::to_string(ni)]["A_a"]   = r_ni_A[ni];
+    }
+    write_json_data(sys_data,"GFCCSD");
+  }
+}
+
 void write_string_to_disk(ExecutionContext& ec, const std::string& tstring, const std::string& filename) {
 
     int tstring_len = tstring.length();
@@ -155,7 +179,7 @@ void write_string_to_disk(ExecutionContext& ec, const std::string& tstring, cons
 
 
     if (rank == 0) {
-        cout << combined_string << endl;
+        // cout << combined_string << endl;
         std::ofstream out(filename, std::ios::out);
         if(!out) cerr << "Error opening file " << filename << endl;
         out << combined_string << std::endl;
@@ -248,8 +272,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
     ComplexTensor DEArr_IP{V,O,O};
     
     double denominator = 0.0;
-    const double lshift1 = 0; 
-    const double lshift2 = 0.50000000;
+    const double lshift = 1.00000000;
     auto DEArr_lambda = [&](const IndexVector& bid) {
       const IndexVector blockid = internal::translate_blockid(bid, DEArr_IP());
       const TAMM_SIZE size = DEArr_IP.block_size(blockid);
@@ -262,11 +285,11 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
       for(size_t k = block_offset[2]; k < block_offset[2] + block_dims[2]; k++, c++) {
         denominator = gf_omega + p_evl_sorted_virt[i] - p_evl_sorted_occ[j] 
                                - p_evl_sorted_occ[k];
-        if (denominator < lshift1 && denominator > -1.0*lshift2){
-            denominator += -1.0*lshift2;
+        if (denominator < 0.0 && denominator > -1.0){
+            denominator += -1.0*lshift;
         }
-        else if (denominator > lshift1 && denominator < lshift2) {
-            denominator += lshift2;
+        else if (denominator > 0.0 && denominator < 1.0) {
+            denominator += lshift;
         }
         buf[c] = 1.0/std::complex<T>(denominator, -1.0*gf_eta);
       }
@@ -2060,6 +2083,9 @@ void gfccsd_main_driver(std::string filename) {
           ac->allocate(0);
           int64_t taskcount = 0;
           int64_t next = ac->fetch_add(0, 1);
+
+          std::vector<double> ni_w(lomega_npts_ip,0);
+          std::vector<double> ni_A(lomega_npts_ip,0);
   
           for(int64_t ni=0;ni<lomega_npts_ip;ni++) {
             if (next == taskcount) {
@@ -2082,6 +2108,8 @@ void gfccsd_main_driver(std::string filename) {
               }
   
               spfe << "w = " << std::setprecision(12) << std::real(omega_tmp) << ", A_a =  " << oscalar << endl;
+              ni_A[ni] = oscalar;
+              ni_w[ni] = std::real(omega_tmp);
               
               next = ac->fetch_add(0, 1); 
             }
@@ -2093,6 +2121,7 @@ void gfccsd_main_driver(std::string filename) {
           delete ac;
   
           write_string_to_disk(ec,spfe.str(),extrap_file);
+          write_results_to_json(ec,sys_data,level,ni_w,ni_A,"retarded_alpha");
   
           sch.deallocate(xsub_local_a,o_local_a,Cp_local_a,
                      hsub_tamm_a,bsub_tamm_a,Cp_a).execute();  
