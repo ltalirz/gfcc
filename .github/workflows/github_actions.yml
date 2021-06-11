@@ -87,7 +87,7 @@ jobs:
         with:
           path: |
             ~/gfcc_cache
-          key: ${{ runner.os }}-${{ matrix.mpi_impl }}-${{ matrix.ga_port }}-${{ matrix.cc }}-${{ matrix.cxx }}-simd${{ steps.get-simd.outputs.simd }}-blas${{ matrix.blas }}-gfcc-v000
+          key: ${{ runner.os }}-${{ matrix.mpi_impl }}-${{ matrix.ga_port }}-${{ matrix.cc }}-${{ matrix.cxx }}-simd${{ steps.get-simd.outputs.simd }}-blas${{ matrix.blas }}-gfcc-v001
 
       - name: install_packages
         run: |
