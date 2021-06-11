@@ -77,7 +77,8 @@ for ref_file in ref_files:
         ref_A = ref_gfcc_data[str(ni)]["A_a"]
         cur_A = cur_gfcc_data[str(ni)]["A_a"]
 
-        if (not isclose(ref_w, cur_w)) or (not isclose(ref_A, cur_A, ccsd_threshold)):
+        if(isclose(ref_w,0.0)): cur_w = 0.0
+        if (not isclose(ref_w, cur_w)) or (not isclose(ref_A, cur_A, gf_threshold)):
             print("GFCC ERROR: omega, A_a mismatch. reference (w, A_a): (" + str(ref_w) + "," + str(ref_A) +
             "), current (w, A_a): (" + str(cur_w) + "," + str(cur_A) + ")")
             sys.exit(1)        
