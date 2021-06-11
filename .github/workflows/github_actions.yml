@@ -176,6 +176,10 @@ jobs:
           mpi_nprocs=3
           if [[ "${{ matrix.ga_port }}" == "MPI_2SIDED" ]]  ; then mpi_nprocs=1 ;  fi
           mpirun -n $mpi_nprocs ${MAYBE_OVERSUBSCRIBE} ./test_stage/$GFCC_INSTALL_PATH/methods/GF_CCSD ../tests/co.json
+          mpirun -n $mpi_nprocs ${MAYBE_OVERSUBSCRIBE} ./test_stage/$GFCC_INSTALL_PATH/methods/GF_CCSD ../tests/h2o.json
           ls -lart ||true
-          python3 $GFCC_SRC/ci/scripts/compare_results.py $GFCC_SRC/ci/reference_output co.cc-pvdz_files/rhf/
+          mkdir -p  current_results || true
+          cp *_files/*/*json current_results
+          ls -lart current_results ||true
+          python3 $GFCC_SRC/ci/scripts/compare_results.py $GFCC_SRC/ci/reference_output current_results
           echo "exit code is " $?
