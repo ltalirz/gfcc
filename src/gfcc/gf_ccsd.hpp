@@ -106,25 +106,25 @@ std::string gfacc_str(Ts&&...args)
     return res;
 }
 
-void write_results_to_json(ExecutionContext& ec, SystemData& sys_data, int nlevels,
+void write_results_to_json(ExecutionContext& ec, SystemData& sys_data, int level,
     std::vector<double>& ni_w, std::vector<double>& ni_A, std::string gfcc_type) {
 
   auto lomega_npts = ni_w.size();
-  std::vector<double> r_ni_w;
-  std::vector<double> r_ni_A;
-  if(ec.pg().rank()==0) {
-    r_ni_w.resize(lomega_npts,0);
-    r_ni_A.resize(lomega_npts,0);
-  }
-  MPI_Reduce(ni_w.data(), r_ni_w.data(), lomega_npts, MPI_DOUBLE, MPI_SUM, 0, ec.pg().comm());
-  MPI_Reduce(ni_A.data(), r_ni_A.data(), lomega_npts, MPI_DOUBLE, MPI_SUM, 0, ec.pg().comm());
+  // std::vector<double> r_ni_w;
+  // std::vector<double> r_ni_A;
+  // if(ec.pg().rank()==0) {
+  //   r_ni_w.resize(lomega_npts,0);
+  //   r_ni_A.resize(lomega_npts,0);
+  // }
+  // MPI_Reduce(ni_w.data(), r_ni_w.data(), lomega_npts, MPI_DOUBLE, MPI_SUM, 0, ec.pg().comm());
+  // MPI_Reduce(ni_A.data(), r_ni_A.data(), lomega_npts, MPI_DOUBLE, MPI_SUM, 0, ec.pg().comm());
 
   if(ec.pg().rank() == 0) {
-    sys_data.results["output"]["GFCCSD"][gfcc_type]["nlevels"] = nlevels;
-    sys_data.results["output"]["GFCCSD"][gfcc_type]["omega_npts"] = lomega_npts;
+    const std::string lvl_str = "level" + std::to_string(level);
+    sys_data.results["output"]["GFCCSD"][gfcc_type][lvl_str]["omega_npts"] = lomega_npts;
     for(size_t ni=0;ni<lomega_npts;ni++) {
-      sys_data.results["output"]["GFCCSD"][gfcc_type][std::to_string(ni)]["omega"] = r_ni_w[ni];
-      sys_data.results["output"]["GFCCSD"][gfcc_type][std::to_string(ni)]["A_a"]   = r_ni_A[ni];
+      sys_data.results["output"]["GFCCSD"][gfcc_type][lvl_str][std::to_string(ni)]["omega"] = ni_w[ni];
+      sys_data.results["output"]["GFCCSD"][gfcc_type][lvl_str][std::to_string(ni)]["A_a"]   = ni_A[ni];
     }
     write_json_data(sys_data,"GFCCSD");
   }
@@ -487,12 +487,13 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
     }
     
     // GMRES
-    int64_t gmres_hist = ngmres;
       
     ComplexTensor tmp{};
     sch.allocate(tmp).execute();
 
     do {
+      int64_t gmres_hist = ngmres;
+
       gf_iter++;
 
       auto gf_gmres_0 = std::chrono::high_resolution_clock::now();
@@ -663,11 +664,11 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
 
         H(k+1,k) = sqrt(r1_a_norm*r1_a_norm + 0.5*r2_aaa_norm*r2_aaa_norm + r2_bab_norm*r2_bab_norm);
 
-        if(std::abs(H(k+1,k))<1e-8) {
-          gmres_hist = k+1;
-          sch.deallocate(q1_a,q2_aaa,q2_bab).execute();
-          break;
-        }
+        // if(std::abs(H(k+1,k))<1e-16) {
+        //   gmres_hist = k+1;
+        //   sch.deallocate(q1_a,q2_aaa,q2_bab).execute();
+        //   break;
+        // }
         std::complex<double> scaling = 1.0/H(k+1,k);
 
         auto gf_gmres_3 = std::chrono::high_resolution_clock::now();
@@ -685,15 +686,15 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
           H(i,k) = temp;
         }
   
-        if(std::abs(H(k,k))<1e-16){
-          cn(k,0) = std::complex<double>(0,0);
-          sn(k,0) = std::complex<double>(1,0);
-        }
-        else{
+        // if(std::abs(H(k,k))<1e-16){
+        //   cn(k,0) = std::complex<double>(0,0);
+        //   sn(k,0) = std::complex<double>(1,0);
+        // }
+        // else{
           auto t = sqrt(H(k,k)*H(k,k)+H(k+1,k)*H(k+1,k));
           cn(k,0) = abs(H(k,k))/t;
           sn(k,0) = cn(k,0) * H(k+1,k)/H(k,k);
-        }
+        // }
 
         H(k,k)   = cn(k,0) * H(k,k) + sn(k,0) * H(k+1,k);
         H(k+1,k) = std::complex<double>(0,0);
@@ -735,6 +736,8 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
       CMatrix bsub = b.block(0,0,gmres_hist,1);
       CMatrix y = Hsub.householderQr().solve(bsub);
 
+      if(rank==0 && debug) cout << "residual: " << (bsub-Hsub*y).norm() << endl;
+
       for(auto i = 0; i < gmres_hist; i++) { 
         sch
           (x1_a(h1_oa)               += y(i,0) * Q1_a[i](h1_oa))
@@ -752,12 +755,11 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
       Q2_aaa.clear();
       Q2_bab.clear();
 
-      auto gf_gmres_6 = std::chrono::high_resolution_clock::now();
-      gftime =
-        std::chrono::duration_cast<std::chrono::duration<double>>((gf_gmres_6 - gf_gmres_5)).count();
-      if(root_ppi==0 && debug) cout << "  #iter " << gf_iter << ", T(least_square+X_updat+misc.): " << gftime << endl;
-
-                
+      // auto gf_gmres_6 = std::chrono::high_resolution_clock::now();
+      // gftime =
+      //   std::chrono::duration_cast<std::chrono::duration<double>>((gf_gmres_6 - gf_gmres_5)).count();
+      // if(root_ppi==0 && debug) cout << "  #iter " << gf_iter << ", T(least_square+X_updat+misc.): " << gftime << endl;
+          
     }while(true);
 
     //deallocate memory
@@ -1082,13 +1084,13 @@ void gfccsd_main_driver(std::string filename) {
     }
 
     double printtol=ccsd_options.printtol;
-    // if (rank == 0 && debug) {
-    //     std::cout << std::endl << "Threshold for printing amplitudes set to: " << printtol << std::endl;
-    //     std::cout << "T1, T2 amplitudes written to files: " << files_prefix+".print_t1amp.txt" 
-    //               << ", " << files_prefix+".print_t2amp.txt" << std::endl << std::endl;
-    //     print_max_above_threshold(d_t1,printtol,files_prefix+".print_t1amp.txt");
-    //     print_max_above_threshold(d_t2,printtol,files_prefix+".print_t2amp.txt");
-    // }
+    if (rank == 0 && debug) {
+        std::cout << std::endl << "Threshold for printing amplitudes set to: " << printtol << std::endl;
+        std::cout << "T1, T2 amplitudes written to files: " << files_prefix+".print_t1amp.txt" 
+                  << ", " << files_prefix+".print_t2amp.txt" << std::endl << std::endl;
+        print_max_above_threshold(d_t1,printtol,files_prefix+".print_t1amp.txt");
+        print_max_above_threshold(d_t2,printtol,files_prefix+".print_t2amp.txt");
+    }
 
     if(!ccsd_restart) {
         free_tensors(d_r1,d_r2);
@@ -2031,6 +2033,9 @@ void gfccsd_main_driver(std::string filename) {
         }
 
         cc_t1 = std::chrono::high_resolution_clock::now();
+
+        std::vector<double> ni_w(omega_npts_ip,0);
+        std::vector<double> ni_A(omega_npts_ip,0);        
         
         // Compute spectral function for designated omega regime
         for(int64_t ni=0;ni<omega_npts_ip;ni++) {
@@ -2059,6 +2064,8 @@ void gfccsd_main_driver(std::string filename) {
           std::ostringstream spf;
           spf << "W = " << std::setprecision(12) << std::real(omega_tmp) << ", omega_ip_A0 =  " << omega_ip_A0[ni] << endl;
           cout << spf.str();
+          ni_A[ni] = omega_ip_A0[ni];
+          ni_w[ni] = std::real(omega_tmp);          
           }
         }
   
@@ -2068,6 +2075,7 @@ void gfccsd_main_driver(std::string filename) {
           cout << endl << "omegas processed in level " << level << " = " << omega_extra << endl;
           cout << "Time to compute spectral function in level " << level << " (omega_npts_ip = " << omega_npts_ip << "): " 
                     << time << " secs" << endl;
+          write_results_to_json(ec,sys_data,level,ni_w,ni_A,"retarded_alpha");
         }
   
         auto extrap_file = files_prefix+".extrapolate.retarded.alpha.txt";
@@ -2084,9 +2092,6 @@ void gfccsd_main_driver(std::string filename) {
           int64_t taskcount = 0;
           int64_t next = ac->fetch_add(0, 1);
 
-          std::vector<double> ni_w(lomega_npts_ip,0);
-          std::vector<double> ni_A(lomega_npts_ip,0);
-  
           for(int64_t ni=0;ni<lomega_npts_ip;ni++) {
             if (next == taskcount) {
               std::complex<T> omega_tmp =  std::complex<T>(lomega_min_ip + ni*omega_delta_e, -1.0*gf_eta);
@@ -2108,9 +2113,6 @@ void gfccsd_main_driver(std::string filename) {
               }
   
               spfe << "w = " << std::setprecision(12) << std::real(omega_tmp) << ", A_a =  " << oscalar << endl;
-              ni_A[ni] = oscalar;
-              ni_w[ni] = std::real(omega_tmp);
-              
               next = ac->fetch_add(0, 1); 
             }
             taskcount++;
@@ -2121,7 +2123,10 @@ void gfccsd_main_driver(std::string filename) {
           delete ac;
   
           write_string_to_disk(ec,spfe.str(),extrap_file);
-          write_results_to_json(ec,sys_data,level,ni_w,ni_A,"retarded_alpha");
+          if(rank==0) {
+            sys_data.results["output"]["GFCCSD"]["retarded_alpha"]["nlevels"] = level;
+            write_json_data(sys_data,"GFCCSD");
+          }
   
           sch.deallocate(xsub_local_a,o_local_a,Cp_local_a,
                      hsub_tamm_a,bsub_tamm_a,Cp_a).execute();  
