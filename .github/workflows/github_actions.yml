@@ -179,7 +179,7 @@ jobs:
           export GFCC_INSTALL_PATH=$GITHUB_WORKSPACE/gfcc_install
           cd $GFCC_SRC/build
           export OMP_NUM_THREADS=1
-          if [[ "${{ matrix.mpi_impl }}" == "openmpi" ]] ; then MAYBE_OVERSUBSCRIBE=-oversubscribe ;  fi
+          if [[ "${{ matrix.mpi_impl }}" == "openmpi" ]] ; then MAYBE_OVERSUBSCRIBE="-oversubscribe -mca ^openib" ;  fi
           mpi_nprocs=3
           if [[ "${{ matrix.ga_port }}" == "MPI_2SIDED" ]]  ; then mpi_nprocs=1 ;  fi
           mpirun -n $mpi_nprocs ${MAYBE_OVERSUBSCRIBE} ./test_stage/$GFCC_INSTALL_PATH/methods/GF_CCSD ../tests/co.json
