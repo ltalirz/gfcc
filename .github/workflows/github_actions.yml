@@ -48,6 +48,13 @@ jobs:
             experimental: true 
             mpi_impl: openmpi
             ga_port: MPI_2SIDED
+            cxx: g++-10
+            cc: gcc-10
+            fc: gfortran-10
+          - os: ubuntu-18.04
+            experimental: true
+            mpi_impl: openmpi
+            ga_port: MPI_PROGRESS_RANK
             cxx: clang++-9
             cc: clang-9
             fc: gfortran-9
