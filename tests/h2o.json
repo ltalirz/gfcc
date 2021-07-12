@@ -24,7 +24,7 @@
     "tilesize": 30
   },
   "CD": {
-    "diagtol": 1e-08,
+    "diagtol": 1e-08
   },
   "CC": {
     "threshold": 1e-10,

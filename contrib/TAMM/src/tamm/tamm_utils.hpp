@@ -167,18 +167,37 @@ void print_tensor_all(const Tensor<T>& tensor, std::string filename="") {
     else std::cout << tstring.str();
 }
 
+template<typename T>
+void print_vector(std::vector<T> vec, std::string filename="") {
+    std::stringstream tstring;
+    for (size_t i=0;i<vec.size();i++) 
+        tstring << i+1 << "\t" << vec[i] << std::endl;
+
+    if(!filename.empty()) {
+        std::ofstream tos(filename, std::ios::out);
+        if(!tos) std::cerr << "Error opening file " << filename << std::endl;
+        tos << tstring.str() << std::endl;
+        tos.close();
+    }
+    else std::cout << tstring.str();
+}
+
 /**
  * @brief Print values in tensor greater than given threshold
  *
  * @tparam T template type for Tensor element type
  * @param [in] tensor input Tensor object
- * @param [in] printol given threshold [default=0.05]
+ * @param [in] printol given threshold
+ * @param [in] filename (Optional) Writes to filename provided, else prints to stdout by default.
  *
  * @warning This function only works sequentially
  */
+
 template<typename T>
-void print_max_above_threshold(const Tensor<T>& tensor, double printtol=0.05) {
+void print_max_above_threshold(const Tensor<T>& tensor, double printtol, std::string filename="") {
     auto lt = tensor();
+    std::stringstream tstring;
+
     for(auto it : tensor.loop_nest()) {
         auto blockid   = internal::translate_blockid(it, lt);
         if(!tensor.is_non_zero(blockid)) continue;
@@ -190,14 +209,22 @@ void print_max_above_threshold(const Tensor<T>& tensor, double printtol=0.05) {
         for(TAMM_SIZE i = 0; i < size; i++) {
             if constexpr(tamm::internal::is_complex_v<T>) {
                  if(std::fabs(buf[i].real()) > printtol)
-                    std::cout << buf[i] << std::endl;
+                    tstring << buf[i] << std::endl;
             } else {
                if(std::fabs(buf[i]) > printtol)
-                    std::cout << buf[i] << std::endl;
+                    tstring << buf[i] << std::endl;
             }
         }
-        std::cout << std::endl;
+        // tstring << std::endl;
     }
+    
+    if(!filename.empty()) {
+        std::ofstream tos(filename, std::ios::out);
+        if(!tos) std::cerr << "Error opening file " << filename << std::endl;
+        tos << tstring.str() << std::endl;
+        tos.close();
+    }
+    else std::cout << tstring.str();
 }
 
 /**

@@ -1,0 +1,381 @@
+{
+  "geometry": {
+    "coordinates": [
+      "H     0.00000000    0.00000000    0.00000000",
+      "O     0.75946038    0.00000000    0.56053336",
+      "H    -0.75946038    0.00000000    0.56053336"
+    ],
+    "units": "bohr"
+  },
+  "basis": {
+    "basisset": "cc-pvdz",
+    "sphcart": "spherical"
+  },
+  "common": {
+    "maxiter": 50
+  },
+  "SCF": {
+    "tol_int": 1e-20,
+    "tol_lindep": 1e-06,
+    "conve": 1e-12,
+    "convd": 1e-11,
+    "diis_hist": 10,
+    "force_tilesize": false,
+    "tilesize": 30
+  },
+  "CD": {
+    "diagtol": 1e-08
+  },
+  "CC": {
+    "threshold": 1e-10,
+    "writet": true,
+    "GFCCSD": {
+      "gf_ip": true,
+      "gf_p_oi_range": 1,
+      "gf_eta": -0.01,
+      "gf_threshold": 0.01,
+      "gf_maxiter": 100,
+      "gf_itriples": false,
+      "gf_ngmres": 10,
+      "gf_damping_factor": 1.0,
+      "gf_omega_min_ip": -0.4,
+      "gf_omega_max_ip": -0.2,
+      "gf_omega_min_ip_e": -2.0,
+      "gf_omega_max_ip_e": 0.0,
+      "gf_omega_delta": 0.01,
+      "gf_omega_delta_e": 0.002
+    }
+  }
+}
+
+Common Options
+{
+ maxiter    = 50
+ basis      = cc-pvdz spherical
+ geom_units = bohr
+ debug      = false
+}
+
+Number of nodes, mpi ranks per node provided: 1, 1
+Number of nodes, mpi ranks per node used for SCF calculation: 1, 1
+
+SCF Options
+{
+ charge       = 0
+ multiplicity = 1
+ level shift  = 0
+ tol_int      = 1e-20
+ tol_lindep   = 1e-06
+ conve        = 1e-12
+ convd        = 1e-11
+ diis_hist    = 10
+ AO_tilesize  = 30
+ writem       = 10
+ restart      = false
+ debug        = false
+ ediis        = false
+ ediis_off    = 1e-05
+ sad          = false
+}
+
+Number of basis functions = 24
+
+Total number of electrons = 10
+  # of alpha electrons    = 5
+  # of beta electons      = 5
+
+Nuclear repulsion energy  = 14.8016426537815
+
+# of {all,non-negligible} shell-pairs = {78,78}
+Number of AO tiles = 12
+
+Time for initial setup: 0.005414648 secs
+
+Time for computing 1-e integrals T, V, S: 0.001122465 secs
+Time for computing orthogonalizer: 0.000203641 secs
+
+pre-compute data for Schwarz bounds
+
+Projecting minimal basis SOAD onto basis set specified (cc-pvdz)
+Initial guess: 0.006489483 secs
+Total Time to compute initial guess: 0.007455287 secs
+
+
+ SCF iterations
+-----------------------------------------------------------------
+ Iter     Energy            E-Diff        RMSD        Time(s)
+-----------------------------------------------------------------
+   1  -74.8591798154    -7.49e+01     4.86e-02         0.0 
+   2  -74.9547911390    -9.56e-02     1.21e-02         0.0 
+   3  -74.8917486100     6.30e-02     6.79e-03         0.0 
+   4  -74.9013551146    -9.61e-03     2.85e-03         0.0 
+   5  -74.9028915470    -1.54e-03     1.13e-03         0.0 
+   6  -74.9023184214     5.73e-04     3.69e-04         0.0 
+   7  -74.9020628929     2.56e-04     1.09e-04         0.0 
+   8  -74.9019962907     6.66e-05     3.22e-05         0.0 
+   9  -74.9019777407     1.86e-05     9.54e-06         0.0 
+  10  -74.9019719527     5.79e-06     2.85e-06         0.0 
+  11  -74.9019702683     1.68e-06     8.55e-07         0.0 
+<DIIS> Singularity in Pulay matrix detected.
+<DIIS> Singularity in Pulay matrix detected.
+<DIIS> Singularity in Pulay matrix detected.
+<DIIS> Singularity in Pulay matrix detected.
+<DIIS> Singularity in Pulay matrix detected.
+<DIIS> Singularity in Pulay matrix detected.
+<DIIS> Singularity in Pulay matrix detected.
+<DIIS> Singularity in Pulay matrix detected.
+  12  -74.9019697606     5.08e-07     2.56e-07         0.0 
+  13  -74.9019696062     1.54e-07     7.69e-08         0.0 
+  14  -74.9019695608     4.54e-08     2.30e-08         0.0 
+  15  -74.9019695468     1.40e-08     6.91e-09         0.0 
+  16  -74.9019695428     4.00e-09     2.07e-09         0.0 
+<DIIS> Singularity in Pulay matrix detected.
+  17  -74.9019695408     2.04e-09     3.91e-10         0.0 
+  18  -74.9019695409    -1.62e-10     2.10e-10         0.0 
+  19  -74.9019695410    -4.85e-11     1.20e-10         0.0 
+  20  -74.9019695410    -1.46e-11     7.02e-11         0.0 
+  21  -74.9019695410    -4.38e-12     4.16e-11         0.0 
+  22  -74.9019695410    -1.28e-12     2.49e-11         0.0 
+  23  -74.9019695410    -4.26e-13     1.49e-11         0.0 
+  24  -74.9019695410     1.42e-14     9.05e-12         0.0 
+
+** Total SCF energy = -74.9019695409922
+
+Nuclear repulsion energy = 14.801642653781485
+#electrons        = 9.999999999999961
+1e energy kinetic = 78.7257637438777635
+1e energy N-e     = -209.5514399584430691
+1e energy         = -130.8256762145653624
+2e energy         = 41.1220640197989198
+writing orbitals and density to file... done.
+
+Time taken for Hartree-Fock: 0.6051504290000000 secs
+
+CCSD Options
+{
+ ndiis                = 5
+ printtol             = 0.05
+ threshold            = 1e-10
+ tilesize             = 50
+ ccsd_maxiter         = 50
+ itilesize            = 1000
+ readt                = false
+ writet               = true
+ writev               = false
+ computeTData         = true
+ writet_iter          = 5
+ profile_ccsd         = false
+ balance_tiles        = true
+ gf_p_oi_range        = 1
+ gf_ip                = true
+ gf_ea                = false
+ gf_os                = false
+ gf_cs                = true
+ gf_restart           = false
+ gf_itriples          = false
+ gf_ndiis             = 10
+ gf_ngmres            = 10
+ gf_maxiter           = 100
+ gf_eta               = -0.01
+ gf_damping_factor    = 1
+ gf_threshold         = 0.01
+ gf_omega_min_ip      = -0.4
+ gf_omega_max_ip      = -0.2
+ gf_omega_min_ip_e    = -2
+ gf_omega_max_ip_e    = 0
+ gf_omega_min_ea      = 0
+ gf_omega_max_ea      = 0.1
+ gf_omega_min_ea_e    = 0
+ gf_omega_max_ea_e    = 2
+ gf_omega_delta       = 0.01
+ gf_omega_delta_e     = 0.002
+ debug                = false
+}
+
+#occupied, #virtual = 10, 38
+
+CD Options
+{
+ diagtol          = 1e-08
+ max_cvecs_factor = 16
+ debug            = false
+}
+Number of cholesky vectors to be read = 224
+
+Total Time taken for CD (+SVD): 8.1834e-05 secs
+
+----------------------------
+scf_type = rhf
+nbf = 24
+nbf_orig = 24
+n_lindep = 0
+focc = 2
+nmo = 48
+nocc = 10
+nvir = 38
+n_occ_alpha = 5
+n_vir_alpha = 19
+n_occ_beta = 5
+n_vir_beta = 19
+nelectrons = 10
+nelectrons_alpha = 5
+nelectrons_beta = 5
+n_frozen_core = 0
+n_frozen_virtual = 0
+----------------------------
+
+
+ CCSD iterations
+------------------------------------------------------------------
+ Iter          Residuum       Correlation     Cpu    Wall    V2*C2
+------------------------------------------------------------------
+Total CPU memory required for Closed Shell Cholesky CCSD calculation: 0.0080002 GiB
+
+     1  1.972694987987e-11  -0.1955693162882     0.0     0.05     0.0
+------------------------------------------------------------------
+ Iterations converged
+ CCSD correlation energy / hartree =        -0.195569316288241
+ CCSD total energy / hartree       =       -75.097538857280469
+
+Time taken for Closed Shell Cholesky CCSD: 0.079232720000000 secs
+
+CCSD Options
+{
+ ndiis                = 5
+ printtol             = 0.05
+ threshold            = 1e-10
+ tilesize             = 50
+ ccsd_maxiter         = 50
+ itilesize            = 1000
+ readt                = false
+ writet               = true
+ writev               = false
+ computeTData         = true
+ writet_iter          = 5
+ profile_ccsd         = false
+ balance_tiles        = true
+ gf_p_oi_range        = 1
+ gf_ip                = true
+ gf_ea                = false
+ gf_os                = false
+ gf_cs                = true
+ gf_restart           = false
+ gf_itriples          = false
+ gf_ndiis             = 10
+ gf_ngmres            = 10
+ gf_maxiter           = 100
+ gf_eta               = -0.01
+ gf_damping_factor    = 1
+ gf_threshold         = 0.01
+ gf_omega_min_ip      = -0.4
+ gf_omega_max_ip      = -0.2
+ gf_omega_min_ip_e    = -2
+ gf_omega_max_ip_e    = 0
+ gf_omega_min_ea      = 0
+ gf_omega_max_ea      = 0.1
+ gf_omega_min_ea_e    = 0
+ gf_omega_max_ea_e    = 2
+ gf_omega_delta       = 0.01
+ gf_omega_delta_e     = 0.002
+ debug                = false
+}
+
+#occupied, #virtual = 10, 38
+Freq. space (before doing MOR): [-0.4,-0.39,-0.38,-0.37,-0.36,-0.35,-0.34,-0.33,-0.32,-0.31,-0.3,-0.29,-0.28,-0.27,-0.26,-0.25,-0.24,-0.23,-0.22,-0.21,-0.2,]
+
+GFCC: Time taken pre-restart: 0.705597012 secs
+
+GFCC: Time taken for reading/writing intermediates: 0.21202481 secs
+
+_____retarded_GFCCSD_on_alpha_spin______
+
+-------------------------------------------------------
+GF-CCSD (w = -0.4) 
+
+-------------------------------------------------------
+GF-CCSD (w = -0.2) 
+
+Time to read in pre-computed Q1/Q2: 0.000217912 secs
+
+Time for orthogonalization: 0 secs
+
+Time for normalizing and copying back: 0 secs
+
+Total time for Gram-Schmidt: 0 secs
+
+Time to contract Q1/Q2: 0.002757981 secs
+
+Time to compute Cp: 0.031170999 secs
+
+spectral function (omega_npts_ip = 21):
+W = -0.4, omega_ip_A0 =  -1.23556777714
+W = -0.39, omega_ip_A0 =  -1.06214334617
+W = -0.38, omega_ip_A0 =  -0.924809848757
+W = -0.37, omega_ip_A0 =  -0.813927816978
+W = -0.36, omega_ip_A0 =  -0.722921223834
+W = -0.35, omega_ip_A0 =  -0.647169964948
+W = -0.34, omega_ip_A0 =  -0.583344852659
+W = -0.33, omega_ip_A0 =  -0.528993538521
+W = -0.32, omega_ip_A0 =  -0.482274395808
+W = -0.31, omega_ip_A0 =  -0.441780677372
+W = -0.3, omega_ip_A0 =  -0.406421435953
+W = -0.29, omega_ip_A0 =  -0.375339101053
+W = -0.28, omega_ip_A0 =  -0.347851299746
+W = -0.27, omega_ip_A0 =  -0.323409059373
+W = -0.26, omega_ip_A0 =  -0.301566296063
+W = -0.25, omega_ip_A0 =  -0.28195721607
+W = -0.24, omega_ip_A0 =  -0.264279354578
+W = -0.23, omega_ip_A0 =  -0.248280690153
+W = -0.22, omega_ip_A0 =  -0.233749745614
+W = -0.21, omega_ip_A0 =  -0.220507904484
+W = -0.2, omega_ip_A0 =  -0.208403390063
+
+omegas processed in level 1 = [-0.4,-0.2,]
+Time to compute spectral function in level 1 (omega_npts_ip = 21): 0.022612332 secs
+
+-------------------------------------------------------
+GF-CCSD (w = -0.3) 
+
+Time to read in pre-computed Q1/Q2: 0.004841441 secs
+
+Time for orthogonalization: 0 secs
+
+Time for normalizing and copying back: 0 secs
+
+Total time for Gram-Schmidt: 0 secs
+
+Time to contract Q1/Q2: 0.003059432 secs
+
+Time to compute Cp: 0.064662737 secs
+
+spectral function (omega_npts_ip = 21):
+W = -0.4, omega_ip_A0 =  -1.23555964717
+W = -0.39, omega_ip_A0 =  -1.06213862372
+W = -0.38, omega_ip_A0 =  -0.92480689113
+W = -0.37, omega_ip_A0 =  -0.813925665271
+W = -0.36, omega_ip_A0 =  -0.722919314217
+W = -0.35, omega_ip_A0 =  -0.647167967984
+W = -0.34, omega_ip_A0 =  -0.583342580765
+W = -0.33, omega_ip_A0 =  -0.528990891118
+W = -0.32, omega_ip_A0 =  -0.482271326054
+W = -0.31, omega_ip_A0 =  -0.441777171584
+W = -0.3, omega_ip_A0 =  -0.406417500691
+W = -0.29, omega_ip_A0 =  -0.375334754925
+W = -0.28, omega_ip_A0 =  -0.347846568167
+W = -0.27, omega_ip_A0 =  -0.323403971217
+W = -0.26, omega_ip_A0 =  -0.301560881519
+W = -0.25, omega_ip_A0 =  -0.281951505296
+W = -0.24, omega_ip_A0 =  -0.264273376865
+W = -0.23, omega_ip_A0 =  -0.248274473432
+W = -0.22, omega_ip_A0 =  -0.233743316186
+W = -0.21, omega_ip_A0 =  -0.220501286896
+W = -0.2, omega_ip_A0 =  -0.208396607078
+
+omegas processed in level 2 = [-0.3,]
+Time to compute spectral function in level 2 (omega_npts_ip = 21): 0.025844723 secs
+
+--------------------extrapolate & converge-----------------------
+
+Time taken for extrapolation (lomega_npts_ip = 1001): 2.737728826 secs
+
+Time taken for GF-CCSD: 3.147684342 secs
