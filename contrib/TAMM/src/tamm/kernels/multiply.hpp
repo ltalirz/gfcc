@@ -26,7 +26,6 @@
 // #define USE_TALSH
 #ifdef USE_TALSH
 #include "tamm/talsh_tamm.hpp"
-#include "tamm/cuda_memory_allocator.hpp"
 using tensor_handle = talsh_tens_t;
 
 #undef C0
@@ -37,78 +36,18 @@ using tensor_handle = talsh_tens_t;
 #undef C8
 #undef C9
 #undef C10
+
+#ifndef USE_HIP
+#include "tamm/cuda_memory_allocator.hpp"
+#endif
+
 #endif
 
 #include "tamm/tamm_dpcpp.hpp"
 
 namespace tamm {
 
-namespace internal {
 
-template<typename>
-struct is_tuple : std::false_type {};
-template<typename... T>
-struct is_tuple<std::tuple<T...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_tuple_v = is_tuple<T>::value;
-
-template<typename> struct is_complex : std::false_type {};
-template<typename T> struct is_complex<std::complex<T>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_complex_v = is_complex<T>::value;
-
-template<typename T>
-void gemm_wrapper(const CBLAS_ORDER Order, const CBLAS_TRANSPOSE TransA,
-                  const CBLAS_TRANSPOSE TransB, const int M, const int N,
-                  const int K, T alpha, const T* A, const int lda, const T* B,
-                  const int ldb, T beta, T* C, const int ldc);
-
-template<>
-inline void gemm_wrapper<double>(const CBLAS_ORDER Order,
-                                 const CBLAS_TRANSPOSE TransA,
-                                 const CBLAS_TRANSPOSE TransB, const int M,
-                                 const int N, const int K, double alpha,
-                                 const double* A, const int lda,
-                                 const double* B, const int ldb, double beta,
-                                 double* C, const int ldc) {
-    cblas_dgemm(Order, TransA, TransB, M, N, K, alpha, A, lda, B, ldb, beta, C,
-                ldc);
-}
-
-template<>
-inline void gemm_wrapper<float>(const CBLAS_ORDER Order,
-                                const CBLAS_TRANSPOSE TransA,
-                                const CBLAS_TRANSPOSE TransB, const int M,
-                                const int N, const int K, float alpha,
-                                const float* A, const int lda, const float* B,
-                                const int ldb, float beta, float* C,
-                                const int ldc) {
-    cblas_sgemm(Order, TransA, TransB, M, N, K, alpha, A, lda, B, ldb, beta, C,
-                ldc);
-}
-
-template<>
-inline void gemm_wrapper<std::complex<float>>(
-  const CBLAS_ORDER Order, const CBLAS_TRANSPOSE TransA,
-  const CBLAS_TRANSPOSE TransB, const int M, const int N, const int K,
-  std::complex<float> alpha, const std::complex<float>* A, const int lda,
-  const std::complex<float>* B, const int ldb, std::complex<float> beta,
-  std::complex<float>* C, const int ldc) {
-    cblas_cgemm(Order, TransA, TransB, M, N, K, (const float*)&alpha, (const float*)A, lda,
-               (const float*)B, ldb, (const float*)&beta, (float*)C, ldc);
-}
-
-template<>
-inline void gemm_wrapper<std::complex<double>>(
-  const CBLAS_ORDER Order, const CBLAS_TRANSPOSE TransA,
-  const CBLAS_TRANSPOSE TransB, const int M, const int N, const int K,
-  std::complex<double> alpha, const std::complex<double>* A, const int lda,
-  const std::complex<double>* B, const int ldb, std::complex<double> beta,
-  std::complex<double>* C, const int ldc) {
-    cblas_zgemm(Order, TransA, TransB, M, N, K, (const double*)&alpha, (const double*)A,
-                lda, (const double*)B, ldb, (const double*)&beta, (double*)C, ldc);
-}
-} // namespace internal
 
 namespace kernels {
 
@@ -120,7 +59,7 @@ void block_multiply(bool &isgpuOp,
           int copy_ctrl,
         #endif
         #ifdef USE_DPCPP
-          cl::sycl::queue* dev_queue,
+          sycl::queue* dev_queue,
         #endif
           int dev_id, T alpha, const T2* abuf, const SizeVec& adims,
           const IntLabelVec& alabels, const T3* bbuf,
@@ -253,8 +192,8 @@ void block_multiply(bool &isgpuOp,
     cinter_dims.insert(cinter_dims.end(), bouter_dims.begin(),
                        bouter_dims.end());
 
-    auto transA    = CblasNoTrans;
-    auto transB    = CblasNoTrans;
+    auto transA    = blas::Op::NoTrans;
+    auto transB    = blas::Op::NoTrans;
     int ainter_ld  = K;
     int binter_ld  = N;
     int cinter_ld  = N;
@@ -273,15 +212,15 @@ void block_multiply(bool &isgpuOp,
     assign<T3>(binter_buf.data(), binter_dims, binter_labels, T3{1}, bbuf, bdims,
            blabels, true);
 #ifdef USE_DPCPP
-    T2* ainter_buf_dev = cl::sycl::malloc_device<T2>(ainter_buf.size(), *dev_queue);
-    T3* binter_buf_dev = cl::sycl::malloc_device<T3>(binter_buf.size(), *dev_queue);
-    T1* cinter_buf_dev = cl::sycl::malloc_device<T1>(cinter_buf.size(), *dev_queue);
+    T2* ainter_buf_dev = sycl::malloc_device<T2>(ainter_buf.size(), *dev_queue);
+    T3* binter_buf_dev = sycl::malloc_device<T3>(binter_buf.size(), *dev_queue);
+    T1* cinter_buf_dev = sycl::malloc_device<T1>(cinter_buf.size(), *dev_queue);
 
     // host-->device copy
     dev_queue->memcpy(ainter_buf_dev, ainter_buf.data(), ainter_buf.size()*sizeof(T2));
     dev_queue->memcpy(binter_buf_dev, binter_buf.data(), binter_buf.size()*sizeof(T3));
     dev_queue->memcpy(cinter_buf_dev, cinter_buf.data(), cinter_buf.size()*sizeof(T1));
-    dev_queue->wait_and_throw();
+    dev_queue->wait();
 #endif
 
     // dgemm
@@ -290,16 +229,21 @@ void block_multiply(bool &isgpuOp,
           for(size_t bri = 0; bri < BR; bri++) {
               for(size_t i = 0; i < B; i++) {
 #ifdef USE_DPCPP
-                oneapi::mkl::blas::gemm(*dev_queue, oneapi::mkl::transpose::N, oneapi::mkl::transpose::N, N, M, K, alpha,
-                                binter_buf_dev + bri * breduce_ld + i * bbatch_ld,
-                                binter_ld,
-                                ainter_buf_dev + ari * areduce_ld + i * abatch_ld,
-                                ainter_ld, beta, cinter_buf_dev + i * cbatch_ld,
-                                cinter_ld);
-                dev_queue->wait();
+		auto event_gemm = oneapi::mkl::blas::row_major::gemm(*dev_queue,
+								     oneapi::mkl::transpose::N, oneapi::mkl::transpose::N,
+								     M, N, K,
+								     alpha,
+								     ainter_buf_dev + ari * areduce_ld + i * abatch_ld,
+								     ainter_ld,
+								     binter_buf_dev + bri * breduce_ld + i * bbatch_ld,
+								     binter_ld,
+								     beta,
+								     cinter_buf_dev + i * cbatch_ld,
+								     cinter_ld);
+		event_gemm.wait();
 #else
-                  internal::gemm_wrapper<T>(
-                    CblasRowMajor, transA, transB, M, N, K, alpha,
+                  blas::gemm(blas::Layout::RowMajor, 
+                    transA, transB, M, N, K, alpha,
                     ainter_buf.data() + ari * areduce_ld + i * abatch_ld,
                     ainter_ld,
                     binter_buf.data() + bri * breduce_ld + i * bbatch_ld,
@@ -311,8 +255,8 @@ void block_multiply(bool &isgpuOp,
       }
 #ifdef USE_DPCPP
       // device-->host copy
-      dev_queue->memcpy(cinter_buf.data(), cinter_buf_dev, cinter_buf.size()*sizeof(T1));
-      dev_queue->wait_and_throw();
+      auto d2h_cinter = dev_queue->memcpy(cinter_buf.data(), cinter_buf_dev, cinter_buf.size()*sizeof(T1));
+      d2h_cinter.wait();
 #endif
     }
     #ifdef USE_BLIS
@@ -329,10 +273,10 @@ void block_multiply(bool &isgpuOp,
           else if constexpr(std::is_same_v<T3,float>)
             bli_scopyv(BLIS_NO_CONJUGATE,bsize.value(),&binter_buf[0],1,bbuf_comp_ptr,2);
 #ifdef USE_DPCPP
-          T1* bbuf_complex_dev = cl::sycl::malloc_device<T1>(bbuf_complex.size(), *dev_queue);
+          T1* bbuf_complex_dev = sycl::malloc_device<T1>(bbuf_complex.size(), *dev_queue);
           // host-->device copy
           dev_queue->memcpy(bbuf_complex_dev, bbuf_complex.data(), bbuf_complex.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
 
           for(size_t ari = 0; ari < AR; ari++) {
@@ -346,8 +290,8 @@ void block_multiply(bool &isgpuOp,
                                 ainter_ld, beta, cinter_buf_dev + i * cbatch_ld,
                                 cinter_ld);
 #else
-                internal::gemm_wrapper<T>(
-                  CblasRowMajor, transA, transB, M, N, K, alpha,
+                blas::gemm(blas::Layout::RowMajor, 
+                  transA, transB, M, N, K, alpha,
                   ainter_buf.data() + ari * areduce_ld + i * abatch_ld,
                   ainter_ld,
                   bbuf_complex.data() + bri * breduce_ld + i * bbatch_ld,
@@ -360,7 +304,7 @@ void block_multiply(bool &isgpuOp,
 #ifdef USE_DPCPP
           // device-->host copy
           dev_queue->memcpy(cinter_buf.data(), cinter_buf_dev, cinter_buf.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
         } //is_complex<T1>
         else {
@@ -372,10 +316,10 @@ void block_multiply(bool &isgpuOp,
           else if constexpr(std::is_same_v<T1,float>)
             bli_scopyv(BLIS_NO_CONJUGATE,bsize.value(),bbuf_comp_ptr,2,&bbuf_real[0],1);
 #ifdef USE_DPCPP
-          T1* bbuf_real_dev = cl::sycl::malloc_device<T1>(bbuf_real.size(), *dev_queue);
+          T1* bbuf_real_dev = sycl::malloc_device<T1>(bbuf_real.size(), *dev_queue);
           // host-->device copy
           dev_queue->memcpy(bbuf_real_dev, bbuf_real.data(), bbuf_real.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
 
           for(size_t ari = 0; ari < AR; ari++) {
@@ -389,8 +333,8 @@ void block_multiply(bool &isgpuOp,
                                 ainter_ld, beta, cinter_buf_dev + i * cbatch_ld,
                                 cinter_ld);
 #else
-                internal::gemm_wrapper<T1>(
-                  CblasRowMajor, transA, transB, M, N, K, alpha,
+                blas::gemm(blas::Layout::RowMajor,
+                  transA, transB, M, N, K, alpha,
                   ainter_buf.data() + ari * areduce_ld + i * abatch_ld,
                   ainter_ld,
                   bbuf_real.data() + bri * breduce_ld + i * bbatch_ld,
@@ -403,7 +347,7 @@ void block_multiply(bool &isgpuOp,
 #ifdef USE_DPCPP
           // device-->host copy
           dev_queue->memcpy(cinter_buf.data(), cinter_buf_dev, cinter_buf.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
         } //is_real<T1>
 
@@ -418,10 +362,10 @@ void block_multiply(bool &isgpuOp,
           else if constexpr(std::is_same_v<T2,float>)
             bli_scopyv(BLIS_NO_CONJUGATE,asize.value(),&ainter_buf[0],1,abuf_comp_ptr,2);
 #ifdef USE_DPCPP
-          T1* abuf_complex_dev = cl::sycl::malloc_device<T1>(abuf_complex.size(), *dev_queue);
+          T1* abuf_complex_dev = sycl::malloc_device<T1>(abuf_complex.size(), *dev_queue);
           // host-->device copy
           dev_queue->memcpy(abuf_complex_dev, abuf_complex.data(), abuf_complex.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
 
           for(size_t ari = 0; ari < AR; ari++) {
@@ -435,8 +379,8 @@ void block_multiply(bool &isgpuOp,
                                 ainter_ld, beta, cinter_buf_dev + i * cbatch_ld,
                                 cinter_ld);
 #else
-                internal::gemm_wrapper<T>(
-                  CblasRowMajor, transA, transB, M, N, K, alpha,
+                blas::gemm(blas::Layout::RowMajor,
+                  transA, transB, M, N, K, alpha,
                   abuf_complex.data() + ari * areduce_ld + i * abatch_ld,
                   ainter_ld,
                   binter_buf.data() + bri * breduce_ld + i * bbatch_ld,
@@ -449,7 +393,7 @@ void block_multiply(bool &isgpuOp,
 #ifdef USE_DPCPP
           // device-->host copy
           dev_queue->memcpy(cinter_buf.data(), cinter_buf_dev, cinter_buf.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
         }
         else{
@@ -461,10 +405,10 @@ void block_multiply(bool &isgpuOp,
           else if constexpr(std::is_same_v<T1,float>)
             bli_scopyv(BLIS_NO_CONJUGATE,asize.value(),abuf_comp_ptr,2,&abuf_real[0],1);
 #ifdef USE_DPCPP
-          T1* abuf_real_dev = cl::sycl::malloc_device<T1>(abuf_real.size(), *dev_queue);
+          T1* abuf_real_dev = sycl::malloc_device<T1>(abuf_real.size(), *dev_queue);
           // host-->device copy
           dev_queue->memcpy(abuf_real_dev, abuf_real.data(), abuf_real.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
 
           for(size_t ari = 0; ari < AR; ari++) {
@@ -478,8 +422,8 @@ void block_multiply(bool &isgpuOp,
                                 ainter_ld, beta, cinter_buf_dev + i * cbatch_ld,
                                 cinter_ld);
 #else
-                internal::gemm_wrapper<T1>(
-                  CblasRowMajor, transA, transB, M, N, K, alpha,
+              blas::gemm(blas::Layout::RowMajor,
+                  transA, transB, M, N, K, alpha,
                   abuf_real.data() + ari * areduce_ld + i * abatch_ld,
                   ainter_ld,
                   binter_buf.data() + bri * breduce_ld + i * bbatch_ld,
@@ -492,7 +436,7 @@ void block_multiply(bool &isgpuOp,
 #ifdef USE_DPCPP
           // device-->host copy
           dev_queue->memcpy(cinter_buf.data(), cinter_buf_dev, cinter_buf.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
         }
 
@@ -514,12 +458,12 @@ void block_multiply(bool &isgpuOp,
             bli_scopyv(BLIS_NO_CONJUGATE,bsize.value(),&binter_buf[0],1,bbuf_comp_ptr,2);
           }
 #ifdef USE_DPCPP
-        T1* abuf_complex_dev = cl::sycl::malloc_device<T1>(abuf_complex.size(), *dev_queue);
-        T2* bbuf_complex_dev = cl::sycl::malloc_device<T2>(bbuf_complex.size(), *dev_queue);
+        T1* abuf_complex_dev = sycl::malloc_device<T1>(abuf_complex.size(), *dev_queue);
+        T2* bbuf_complex_dev = sycl::malloc_device<T2>(bbuf_complex.size(), *dev_queue);
         // host-->device copy
         dev_queue->memcpy(abuf_complex_dev, abuf_complex.data(), abuf_complex.size()*sizeof(T1));
         dev_queue->memcpy(bbuf_complex_dev, bbuf_complex.data(), bbuf_complex.size()*sizeof(T2));
-        dev_queue->wait_and_throw();
+        dev_queue->wait();
 #endif
 
           for(size_t ari = 0; ari < AR; ari++) {
@@ -533,8 +477,8 @@ void block_multiply(bool &isgpuOp,
                                 ainter_ld, beta, cinter_buf_dev + i * cbatch_ld,
                                 cinter_ld);
 #else
-                internal::gemm_wrapper<T>(
-                  CblasRowMajor, transA, transB, M, N, K, alpha,
+                blas::gemm(blas::Layout::RowMajor,
+                  transA, transB, M, N, K, alpha,
                   abuf_complex.data() + ari * areduce_ld + i * abatch_ld,
                   ainter_ld,
                   bbuf_complex.data() + bri * breduce_ld + i * bbatch_ld,
@@ -547,7 +491,7 @@ void block_multiply(bool &isgpuOp,
 #ifdef USE_DPCPP
           // device-->host copy
           dev_queue->memcpy(cinter_buf.data(), cinter_buf_dev, cinter_buf.size()*sizeof(T1));
-          dev_queue->wait_and_throw();
+          dev_queue->wait();
 #endif
       }
 
@@ -557,9 +501,9 @@ void block_multiply(bool &isgpuOp,
     // C[0]="<<cinter_buf[0]<<"\n";
 
 #ifdef USE_DPCPP
-    cl::sycl::free(ainter_buf_dev, *dev_queue);
-    cl::sycl::free(binter_buf_dev, *dev_queue);
-    cl::sycl::free(cinter_buf_dev, *dev_queue);
+    sycl::free(ainter_buf_dev, *dev_queue);
+    sycl::free(binter_buf_dev, *dev_queue);
+    sycl::free(cinter_buf_dev, *dev_queue);
 #endif
 
     assign<T1>(cbuf, cdims, clabels, T{1}, cinter_buf.data(), cinter_dims,

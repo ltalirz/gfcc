@@ -21,6 +21,7 @@
     
     "SCF": {
         "charge": 0,
+        "scf_type": "restricted",
         "multiplicity": 1,
         "lshift": 0,
         "tol_int": 1e-12,

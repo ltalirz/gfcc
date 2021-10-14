@@ -562,11 +562,16 @@ std::tuple<double,double> cd_ccsd_cs_driver(SystemData& sys_data, ExecutionConte
         // .exact_copy(t2_abba(p1_va,p2_vb,h3_ob,h4_oa),  t2_abab(p1_va,p2_vb,h3_ob,h4_oa),true,-1.0)
         // .exact_copy(t2_baab(p1_vb,p2_va,h3_oa,h4_ob),  t2_abab(p1_vb,p2_va,h3_oa,h4_ob),true,-1.0)
 
-        sch.exact_copy(t2_baba,t2_abab,true, 1.0,perm1);
-        sch.exact_copy(t2_abba,t2_abab,true,-1.0,perm2);
-        sch.exact_copy(t2_baab,t2_abab,true,-1.0,perm3);
+        // sch.exact_copy(t2_baba,t2_abab,true, 1.0,perm1);
+        // sch.exact_copy(t2_abba,t2_abab,true,-1.0,perm2);
+        // sch.exact_copy(t2_baab,t2_abab,true,-1.0,perm3);
 
-        sch(d_t1(p1_va,h3_oa)          = t1_aa(p1_va,h3_oa))
+        sch
+        (t2_baba(p2_vb,p1_va,h4_ob,h3_oa) =        t2_abab(p1_va,p2_vb,h3_oa,h4_ob))
+        (t2_abba(p1_va,p2_vb,h4_ob,h3_oa) = -1.0 * t2_abab(p1_va,p2_vb,h3_oa,h4_ob))
+        (t2_baab(p2_vb,p1_va,h3_oa,h4_ob) = -1.0 * t2_abab(p1_va,p2_vb,h3_oa,h4_ob))
+
+        (d_t1(p1_va,h3_oa)             = t1_aa(p1_va,h3_oa))
         (d_t1(p1_vb,h3_ob)             = t1_bb(p1_vb,h3_ob)) 
         (d_t2(p1_va,p2_va,h3_oa,h4_oa) = t2_aaaa(p1_va,p2_va,h3_oa,h4_oa))
         (d_t2(p1_va,p2_vb,h3_oa,h4_ob) = t2_abab(p1_va,p2_vb,h3_oa,h4_ob))

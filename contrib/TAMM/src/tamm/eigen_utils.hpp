@@ -5,6 +5,7 @@
 #include "tamm/tamm.hpp"
 #include <Eigen/Dense>
 #include <unsupported/Eigen/CXX11/Tensor>
+#include <fmt/fmt.h>
 #undef I
 
 using EigenTensorType=double;
@@ -15,6 +16,92 @@ using Tensor3D = Eigen::Tensor<EigenTensorType, 3, Eigen::RowMajor>;
 using Tensor4D = Eigen::Tensor<EigenTensorType, 4, Eigen::RowMajor>;
 
 namespace tamm {
+
+template<typename T, int ndim>
+void print_eigen_tensor(Eigen::Tensor<T, ndim, Eigen::RowMajor>& etensor, const std::string tname = "") {
+  std::cout << tname << std::endl;
+  if (ndim == 2) {
+    int i, j, k, N, NR;
+    int a1, a2;
+
+    N = etensor.dimensions()[1];
+    NR = etensor.dimensions()[0];
+    a1 = N / 6; // number of blocks
+    a2 = N % 6;
+
+    for (i = 0; i < a1; i++) {
+      fmt::print("            ");
+      for (j = 0; j < 6; j++) {
+        fmt::print("    {:>3}    ", 6 * i + j);
+      }
+      fmt::print("\n");
+      for (j = 0; j < NR; j++) {
+        fmt::print("    {:>3}    ", j);
+        for (k = 0; k < 6; k++) {
+          fmt::print(" {:10.6f}", etensor(j, 6 * i + k));
+        }
+        fmt::print("\n");
+      }
+    }
+
+    if (a2 > 0) {
+      fmt::print("            ");
+      for (j = 0; j < a2; j++) {
+        fmt::print("    {:>3}    ", 6 * a1 + j);
+      }
+      fmt::print("\n");
+      for (j = 0; j < NR; j++) {
+        fmt::print("    {:>3}    ", j);
+        for (k = 0; k < a2; k++) {
+          fmt::print(" {:10.6f}", etensor(j, 6 * a1 + k));
+        }
+        fmt::print("\n");
+      }
+    }
+  }
+}
+
+template<typename T>
+void print_eigen_tensor(Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& etensor, const std::string tname = "") {
+  std::cout << tname << std::endl;
+  int i, j, k, N, NR;
+  int a1, a2;
+
+  N = etensor.cols();
+  NR = etensor.rows();
+  a1 = N / 6; // number of blocks
+  a2 = N % 6;
+
+  for (i = 0; i < a1; i++) {
+    fmt::print("            ");
+    for (j = 0; j < 6; j++) {
+      fmt::print("    {:>3}    ", 6 * i + j);
+    }
+    fmt::print("\n");
+    for (j = 0; j < NR; j++) {
+      fmt::print("    {:>3}    ", j);
+      for (k = 0; k < 6; k++) {
+        fmt::print(" {:10.6f}", etensor(j, 6 * i + k));
+      }
+      fmt::print("\n");
+    }
+  }
+
+  if (a2 > 0) {
+    fmt::print("            ");
+    for (j = 0; j < a2; j++) {
+      fmt::print("    {:>3}    ", 6 * a1 + j);
+    }
+    fmt::print("\n");
+    for (j = 0; j < NR; j++) {
+      fmt::print("    {:>3}    ", j);
+      for (k = 0; k < a2; k++) {
+        fmt::print(" {:10.6f}", etensor(j, 6 * a1 + k));
+      }
+      fmt::print("\n");
+    }
+  }
+}
 
 template<typename T, int ndim>
 void patch_copy(std::vector<T>& sbuf,
@@ -141,6 +228,24 @@ Eigen::Tensor<T, ndim, Eigen::RowMajor> tamm_to_eigen_tensor(
 }
 
 template<typename T>
+Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> tamm_to_eigen_matrix(
+  const tamm::Tensor<T>& tensor){
+    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> etensor;
+    auto dim1 = tensor.tiled_index_spaces()[0].max_num_indices();
+    auto dim2 = tensor.tiled_index_spaces()[1].max_num_indices();
+    etensor.setZero(dim1,dim2);
+    for(const auto& blockid : tensor.loop_nest()) {
+        const tamm::TAMM_SIZE size = tensor.block_size(blockid);
+        std::vector<T> buf(size);
+        tensor.get(blockid, buf);
+        auto block_dims   = tensor.block_dims(blockid);
+        auto block_offset = tensor.block_offsets(blockid);
+        patch_copy<T>(buf, etensor, block_dims, block_offset, true);
+    }
+    return etensor;
+}
+
+template<typename T>
 void tamm_to_eigen_tensor(
   const tamm::Tensor<T>& tensor,
   Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& etensor) {
@@ -240,8 +345,6 @@ void eigen_to_tamm_tensor_acc(
         tensor.add(blockid, buf);
     }
 }
-
-
 
 template<typename T, typename fxn_t>
 void call_eigen_matrix_fxn(const tamm::Tensor<T>& tensor, fxn_t fxn) {

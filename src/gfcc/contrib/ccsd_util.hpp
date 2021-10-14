@@ -500,7 +500,6 @@ std::tuple<SystemData, double,
     auto is = std::ifstream(filename);
     OptionsMap options_map;
     std::tie(options_map, jinput) = parse_input(is);
-    std::vector<Atom> atoms = options_map.options.atoms;
     if(options_map.options.output_file_prefix.empty()) 
       options_map.options.output_file_prefix = getfilename(filename);
     
@@ -508,7 +507,7 @@ std::tuple<SystemData, double,
 
     auto hf_t1 = std::chrono::high_resolution_clock::now();
 
-    std::tie(sys_data, hf_energy, shells, shell_tile_map, C_AO, F_AO, C_beta_AO, F_beta_AO, tAO, tAOt, scf_conv) = hartree_fock(ec, filename, atoms, options_map);
+    std::tie(sys_data, hf_energy, shells, shell_tile_map, C_AO, F_AO, C_beta_AO, F_beta_AO, tAO, tAOt, scf_conv) = hartree_fock(ec, filename, options_map);
     sys_data.input_molecule = getfilename(filename);
     sys_data.output_file_prefix = options_map.options.output_file_prefix;
 
@@ -563,14 +562,14 @@ auto sum_tensor_sizes = [](auto&&... t) {
     return ( ( compute_tensor_size(t) + ...) * 8 ) / (1024*1024*1024.0);
 };
 
-  auto free_vec_tensors = [](auto&&... vecx) {
-      (std::for_each(vecx.begin(), vecx.end(), [](auto& t) { t.deallocate(); }),
-       ...);
-  };
+auto free_vec_tensors = [](auto&&... vecx) {
+    (std::for_each(vecx.begin(), vecx.end(), [](auto& t) { t.deallocate(); }),
+      ...);
+};
 
-  auto free_tensors = [](auto&&... t) {
-      ( (t.deallocate()), ...);
-  };
+auto free_tensors = [](auto&&... t) {
+    ( (t.deallocate()), ...);
+};
 
 
 template<typename T>
@@ -779,7 +778,7 @@ std::tuple<Tensor<T>,Tensor<T>,Tensor<T>,TAMM_SIZE, tamm::Tile, TiledIndexSpace>
               << " secs" << std::endl;
 
     Tensor<T>::deallocate(C_AO,F_AO);
-    if(sys_data.scf_type == sys_data.SCFType::uhf) Tensor<T>::deallocate(C_beta_AO,F_beta_AO);
+    if(sys_data.is_unrestricted) Tensor<T>::deallocate(C_beta_AO,F_beta_AO);
 
     IndexSpace chol_is{range(0,chol_count)};
     TiledIndexSpace CI{chol_is,static_cast<tamm::Tile>(itile_size)}; 

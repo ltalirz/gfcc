@@ -93,6 +93,7 @@ class SCFOptions: public Options {
       convd          = 1e-6;
       diis_hist      = 10;
       AO_tilesize    = 30;
+      dfAO_tilesize  = 50;
       restart        = false;
       noscf          = false;
       ediis          = false;
@@ -103,7 +104,8 @@ class SCFOptions: public Options {
       riscf_str      = "JK";
       moldenfile     = "";
       n_lindep       = 0;
-      scf_type       = "rhf";
+      scf_type       = "restricted";
+      xc_type        = ""; //pbe0
       alpha          = 0.7;
       nnodes         = 1;
       writem         = diis_hist;
@@ -120,7 +122,8 @@ class SCFOptions: public Options {
   double conve;      //energy convergence
   double convd;      //density convergence
   int    diis_hist;  //number of diis history entries
-  int    AO_tilesize; 
+  uint32_t    AO_tilesize;
+  uint32_t    dfAO_tilesize;
   bool   restart;    //Read movecs from disk
   bool   noscf;      //only recompute energy from movecs
   bool   ediis;
@@ -139,6 +142,7 @@ class SCFOptions: public Options {
   int writem; 
   double alpha; //density mixing parameter
   std::string scf_type;
+  std::string xc_type;
 
     void print() {
       std::cout << std::defaultfloat;
@@ -160,6 +164,12 @@ class SCFOptions: public Options {
         cout << " moldenfile   = " << moldenfile << endl;    
         //cout << " n_lindep = " << n_lindep << endl;
       }
+      
+      cout << " scf_type     = " << scf_type << endl;
+      if(!xc_type.empty()) {
+        cout << " xc_type      = " << xc_type << endl;  
+      }
+
       if(scalapack_nb>1) 
         cout << " scalapack_nb = " << scalapack_nb << endl;
       if(scalapack_np_row>0) 
@@ -169,9 +179,9 @@ class SCFOptions: public Options {
       print_bool(" restart     ", restart);
       print_bool(" debug       ", debug); 
       if(restart) print_bool(" noscf       ", noscf);
-      print_bool(" ediis       ", ediis);
-      cout << " ediis_off    = " << ediis_off   << endl;  
-      print_bool(" sad         ", sad); 
+      // print_bool(" ediis       ", ediis);
+      // cout << " ediis_off    = " << ediis_off   << endl;  
+      // print_bool(" sad         ", sad); 
       cout << "}" << endl;
     }
 };
@@ -229,7 +239,13 @@ class CCSDOptions: public Options {
     keep_npairs    = 1;
     max_pnos       = 1;
     dlpno_dfbasis  = "";
-    tcutpno        = 0;
+    TCutEN         = 0.97;
+    TCutPNO        = 0.00;
+    TCutPre        = -1.0;
+    TCutPairs      = 0.00;
+    TCutDO         = 1e-2;
+    TCutDOij       = 1e-5;
+    TCutDOPre      = 3e-2;
 
     ngpu           = 0;
     ccsdt_tilesize = 28;
@@ -249,9 +265,10 @@ class CCSDOptions: public Options {
     gf_ndiis             = 10;
     gf_ngmres            = 10;
     gf_maxiter           = 500;
-    gf_eta               = -0.01;       
+    gf_eta               = 0.01;
+    gf_lshift            = 1.0;
+    gf_preconditioning   = false;
     gf_damping_factor    = 1.0;
-    // gf_level_shift    = 0;
     gf_nprocs_poi        = 0;
     // gf_omega          = -0.4; //a.u (range min to max)     
     gf_threshold         = 1e-2;  
@@ -295,7 +312,14 @@ class CCSDOptions: public Options {
   int    max_pnos;
   size_t keep_npairs;
   std::string dlpno_dfbasis;
-  double tcutpno;
+  double TCutEN;
+  double TCutPNO;
+  double TCutPre;
+  double TCutPairs;
+  double TCutDO;
+  double TCutDOij;
+  double TCutDOPre;
+  std::vector<int> doubles_opt_eqns;
 
   //EOM
   int    eom_nroots;
@@ -308,7 +332,8 @@ class CCSDOptions: public Options {
   int    gf_ngmres;  
   int    gf_maxiter;
   double gf_eta;
-  // double gf_level_shift;
+  double gf_lshift;
+  bool   gf_preconditioning;
   int    gf_nprocs_poi;
   double gf_damping_factor;
   // double gf_omega;       
@@ -351,12 +376,17 @@ class CCSDOptions: public Options {
     print_bool(" readt               ", readt); 
     print_bool(" writet              ", writet);
     print_bool(" writev              ", writev);
-    print_bool(" computeTData        ", computeTData);
+    // print_bool(" computeTData        ", computeTData);    
     cout << " writet_iter          = " << writet_iter      << endl;
     print_bool(" profile_ccsd        ", profile_ccsd);
     print_bool(" balance_tiles       ", balance_tiles);
     
     if(!dlpno_dfbasis.empty()) cout << " dlpno_dfbasis        = " << dlpno_dfbasis << endl; 
+    if(!doubles_opt_eqns.empty()) {
+      cout << " doubles_opt_eqns        = [";
+      for(auto x: doubles_opt_eqns) cout << x << ",";
+      cout << "]" << endl;           
+    }
 
     if(!ext_data_path.empty()) {
       cout << " ext_data_path   = " << ext_data_path << endl;    
@@ -380,7 +410,8 @@ class CCSDOptions: public Options {
       cout << " gf_ngmres            = " << gf_ngmres         << endl;
       cout << " gf_maxiter           = " << gf_maxiter        << endl;
       cout << " gf_eta               = " << gf_eta            << endl;
-      // cout << " gf_level_shift         = " << gf_level_shift << endl;
+      cout << " gf_lshift            = " << gf_lshift         << endl;
+      cout << " gf_preconditioning   = " << gf_preconditioning<< endl;
       cout << " gf_damping_factor    = " << gf_damping_factor << endl;
       
       // cout << " gf_omega       = " << gf_omega << endl;
@@ -472,7 +503,8 @@ std::tuple<Options, SCFOptions, CDOptions, CCSDOptions> parse_json(json& jinput)
     parse_option<double>(scf_options.convd           , jscf, "convd");            
     parse_option<int>   (scf_options.diis_hist       , jscf, "diis_hist");   
     parse_option<bool>  (scf_options.force_tilesize  , jscf, "force_tilesize"); 
-    parse_option<int>   (scf_options.AO_tilesize     , jscf, "tilesize");
+    parse_option<uint32_t>(scf_options.AO_tilesize   , jscf, "tilesize");
+    parse_option<uint32_t>(scf_options.dfAO_tilesize , jscf, "df_tilesize");
     parse_option<double>(scf_options.alpha           , jscf, "alpha");
     parse_option<int>   (scf_options.writem          , jscf, "writem");    
     parse_option<int>   (scf_options.nnodes          , jscf, "nnodes");                                     
@@ -484,6 +516,7 @@ std::tuple<Options, SCFOptions, CDOptions, CCSDOptions> parse_json(json& jinput)
     parse_option<bool>  (scf_options.debug           , jscf, "debug");
     parse_option<string>(scf_options.moldenfile      , jscf, "moldenfile"); 
     parse_option<string>(scf_options.scf_type        , jscf, "scf_type");
+    parse_option<string>(scf_options.xc_type         , jscf, "xc_type");
     parse_option<int>   (scf_options.n_lindep        , jscf, "n_lindep"); 
     parse_option<int>   (scf_options.scalapack_nb    , jscf, "scalapack_nb");
     parse_option<int>   (scf_options.scalapack_np_row, jscf, "scalapack_np_row");                                                             
@@ -517,7 +550,7 @@ std::tuple<Options, SCFOptions, CDOptions, CCSDOptions> parse_json(json& jinput)
     parse_option<bool>  (ccsd_options.balance_tiles , jcc, "balance_tiles");
     parse_option<bool>  (ccsd_options.profile_ccsd  , jcc, "profile_ccsd");                
     parse_option<bool>  (ccsd_options.force_tilesize, jcc, "force_tilesize");     
-    parse_option<string>(ccsd_options.ext_data_path , jcc, "ext_data_path");    
+    parse_option<string>(ccsd_options.ext_data_path , jcc, "ext_data_path");   
     parse_option<bool>  (ccsd_options.computeTData  , jcc, "computeTData");
 
     json jdlpno = jcc["DLPNO"];
@@ -526,7 +559,14 @@ std::tuple<Options, SCFOptions, CDOptions, CCSDOptions> parse_json(json& jinput)
     parse_option<bool>  (ccsd_options.localize     , jdlpno, "localize");
     parse_option<bool>  (ccsd_options.skip_dlpno   , jdlpno, "skip_dlpno");
     parse_option<string>(ccsd_options.dlpno_dfbasis, jdlpno, "df_basisset");
-    parse_option<double>(ccsd_options.tcutpno      , jdlpno, "tcutpno");
+    parse_option<double>(ccsd_options.TCutDO       , jdlpno, "TCutDO");
+    parse_option<double>(ccsd_options.TCutEN       , jdlpno, "TCutEN");
+    parse_option<double>(ccsd_options.TCutPNO      , jdlpno, "TCutPNO");
+    parse_option<double>(ccsd_options.TCutPre      , jdlpno, "TCutPre");
+    parse_option<double>(ccsd_options.TCutPairs    , jdlpno, "TCutPairs");
+    parse_option<double>(ccsd_options.TCutDOij     , jdlpno, "TCutDOij");
+    parse_option<double>(ccsd_options.TCutDOPre    , jdlpno, "TCutDOPre");
+    parse_option<std::vector<int>>(ccsd_options.doubles_opt_eqns, jdlpno, "doubles_opt_eqns");
 
     json jccsd_t = jcc["CCSD(T)"];
     parse_option<int>(ccsd_options.ngpu          , jccsd_t, "ngpu"); 
@@ -551,6 +591,8 @@ std::tuple<Options, SCFOptions, CDOptions, CCSDOptions> parse_json(json& jinput)
     parse_option<int>   (ccsd_options.gf_nprocs_poi       , jgfcc, "gf_nprocs_poi");
     parse_option<double>(ccsd_options.gf_damping_factor   , jgfcc, "gf_damping_factor");
     parse_option<double>(ccsd_options.gf_eta              , jgfcc, "gf_eta");
+    parse_option<double>(ccsd_options.gf_lshift           , jgfcc, "gf_lshift");
+    parse_option<bool>  (ccsd_options.gf_preconditioning  , jgfcc, "gf_preconditioning");
     parse_option<double>(ccsd_options.gf_threshold        , jgfcc, "gf_threshold");
     parse_option<double>(ccsd_options.gf_omega_min_ip     , jgfcc, "gf_omega_min_ip"); 
     parse_option<double>(ccsd_options.gf_omega_max_ip     , jgfcc, "gf_omega_max_ip");  
@@ -606,8 +648,7 @@ class json_sax_no_exception : public nlohmann::detail::json_sax_dom_parser<json>
 inline std::tuple<OptionsMap, json>
    parse_input(std::istream& is) {
 
-    const double angstrom_to_bohr =
-      1.889725989; // 1 / bohr_to_angstrom; //1.889726125
+    const double angstrom_to_bohr = 1.8897259878858;
     
     json jinput;
     json_sax_no_exception jsax(jinput);

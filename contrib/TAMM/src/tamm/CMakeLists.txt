@@ -10,7 +10,7 @@ elseif(USE_HIP)
 endif()
 
 #Add the current directory's sources to the list
-set(TAMM_SRCS tamm.cpp index_space.cpp execution_context.cpp "${tamm_cuda_SRCS}")
+set(TAMM_SRCS tamm.cpp index_space.cpp execution_context.cpp tensor_base.cpp "${tamm_cuda_SRCS}")
 
 #Add the current directory's header files to the list
 set(TAMM_INCLUDES
@@ -49,12 +49,44 @@ set(TAMM_INCLUDES
     lru_cache.hpp
     kernels/assign.hpp
     kernels/multiply.hpp
+    op_dag.hpp
+    interfaces.hpp
+    op_attributes.hpp
+    op_visitors.hpp
+    scalar.hpp
+    block_plan.hpp
+    block_set_plan.hpp
+    block_lambda_plan.hpp
+    block_assign_plan.hpp
+    block_mult_plan.hpp
+    block_span.hpp
+    blockops_cpu.hpp
+    perm.hpp
+    iteration.hpp
+    ip_hptt.hpp
+    blockops_blis.hpp
+    blockops_talsh.hpp
+    tensor_variant.hpp
+    op_executor.hpp
+    symbol.hpp
+    op_cost.hpp
+    block_operations.hpp
+    setop.hpp
+    scanop.hpp
+    mapop.hpp
+    allocop.hpp
+    deallocop.hpp
+    addop.hpp
+    multop.hpp
+    op_base.hpp
+    label_translator.hpp
+    opmin.hpp
     "${tamm_cuda_INCS}"
     # spin_tensor.hpp
    )
 
-   set(TAMM_CFLAGS )
-   set(TAMM_LFLAGS )
-   
-   cmsb_add_library(tamm TAMM_SRCS TAMM_INCLUDES TAMM_CFLAGS TAMM_LFLAGS)
+set(TAMM_CFLAGS )
+set(TAMM_LFLAGS )
+
+cmsb_add_library(tamm TAMM_SRCS TAMM_INCLUDES TAMM_CFLAGS TAMM_LFLAGS)
 

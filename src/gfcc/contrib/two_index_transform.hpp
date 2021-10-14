@@ -2,7 +2,7 @@
 #ifndef TAMM_TWO_INDEX_TRANSFORM_HPP_
 #define TAMM_TWO_INDEX_TRANSFORM_HPP_
 
-#include "hf_common.hpp"
+#include "scf_common.hpp"
 using namespace tamm;
 
 template <typename TensorType>
@@ -37,9 +37,9 @@ void two_index_transform(SystemData sys_data, ExecutionContext& ec, Tensor<Tenso
   auto MO = F_MO.tiled_index_spaces()[0];
   TAMM_GA_SIZE N = MO("all").max_num_indices();
   
-  const bool is_rhf  = scf_options.scf_type == "rhf";
-  const bool is_uhf  = scf_options.scf_type == "uhf";
-  // const bool is_rohf = scf_options.scf_type == "rohf";
+  const bool is_uhf = sys_data.is_unrestricted;
+  const bool is_rhf = sys_data.is_restricted;
+  // const bool is_rohf = sys_data.is_restricted_os;
 
   std::string out_fp = sys_data.output_file_prefix+"."+sys_data.options_map.ccsd_options.basis;
   std::string files_dir = out_fp+"_files/"+sys_data.options_map.scf_options.scf_type;

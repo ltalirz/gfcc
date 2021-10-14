@@ -1,13 +1,11 @@
 #ifndef TAMM_PROC_GROUP_H_
 #define TAMM_PROC_GROUP_H_
 
-#include <ga.h>
-#include <mpi.h>
 #include <pthread.h>
 #include <cassert>
 #include <map>
 #include <vector>
-#include "ga-mpi.h"
+#include <memory>
 
 #include "tamm/types.hpp"
 
@@ -186,6 +184,37 @@ class ProcGroup {
   }
 
   /**
+   * @brief Translate all ranks from this proc group to ranks in @param pg2 
+   *
+   * @param pg2 Proc group to which this group's ranks need to be translated
+   * @return std::vector<Proc> Translated rank for each rank in this group. -1
+   * indicates a rank in this group that is not in @param pg2
+   */
+  std::vector<Proc> rank_translate(const ProcGroup& pg2) {
+    EXPECTS(is_valid());
+    EXPECTS(pg2.is_valid());
+    MPI_Group group1, group2;
+    const size_t nranks = size().value();
+    int ranks1[nranks];
+    for(size_t i=0; i<nranks; i++) {
+      ranks1[i] = i;
+    }
+    int ranks2[nranks];
+    for (size_t i = 0; i < nranks; i++) {
+      ranks2[i] = MPI_PROC_NULL;
+    }
+    // MPI_Comm_group(comm_, &group1);
+    MPI_Comm_group(pginfo_->mpi_comm_, &group1);
+    MPI_Comm_group(pg2.pginfo_->mpi_comm_, &group2);
+    MPI_Group_translate_ranks(group1, nranks, ranks1, group2, ranks2);
+    std::vector<Proc> ret(nranks);
+    for(int i=0; i<nranks; i++) {
+      ret[i] = Proc{ranks2[i]};
+    }
+    return ret;
+  }
+
+  /**
    * @brief Create a GA process group correspondig to MPI_COMM_SELF, or just
    * access it.
    *
@@ -202,6 +231,65 @@ class ProcGroup {
     ga_pg_self = create_ga_process_group_coll(MPI_COMM_SELF);
     created = true;
     return ga_pg_self;
+  }
+
+  template <typename T>
+  void broadcast(T *buf, int root) {
+    MPI_Bcast(buf, 1, mpi_type<T>(), root, pginfo_->mpi_comm_);
+  }
+
+  template <typename T>
+  void broadcast(T *buf, int buflen, int root) {
+    MPI_Bcast(buf, buflen, mpi_type<T>(), root, pginfo_->mpi_comm_);
+  }
+
+  template <typename T>
+  void gather(const T *sbuf, T *rbuf, int root) {
+    MPI_Gather(sbuf, 1, mpi_type<T>(), rbuf, 1, mpi_type<T>(), root, pginfo_->mpi_comm_);
+  }
+
+  template <typename T>
+  void gather(const T *sbuf, int scount, T *rbuf, int rcount, int root) {
+    MPI_Gather(sbuf, scount, mpi_type<T>(), rbuf, rcount, mpi_type<T>(), root, pginfo_->mpi_comm_);
+  }
+
+  template <typename T>
+  void gatherv(const T *sbuf, int scount, T *rbuf, const int* rcounts, const int* displacements, int root) {
+    MPI_Gatherv(sbuf, scount, mpi_type<T>(), rbuf, rcounts, displacements, mpi_type<T>(), root, pginfo_->mpi_comm_);
+  }  
+
+  template <typename T>
+  void allgather(const T *sbuf, T *rbuf) {
+    MPI_Allgather(sbuf, 1, mpi_type<T>(), rbuf, 1, mpi_type<T>(), pginfo_->mpi_comm_);
+  }
+
+  template <typename T>
+  void allgather(const T *sbuf, int scount, T *rbuf, int rcount) {
+    MPI_Allgather(sbuf, scount, mpi_type<T>(), rbuf, rcount, mpi_type<T>(), pginfo_->mpi_comm_);
+  }
+
+  template <typename T>
+  T reduce(const T *buf, ReduceOp op, int root) {
+    T result{};
+    MPI_Reduce(buf, &result, 1, mpi_type<T>(), mpi_op(op), root, pginfo_->mpi_comm_);
+    return result;
+  }
+
+  template <typename T>
+  void reduce(const T *sbuf, T *rbuf, int count, ReduceOp op, int root) {
+    MPI_Reduce(sbuf, rbuf, count, mpi_type<T>(), mpi_op(op), root, pginfo_->mpi_comm_);
+  }
+
+  template <typename T>
+  T allreduce(const T *buf, ReduceOp op) {
+    T result{};
+    MPI_Allreduce(buf, &result, 1, mpi_type<T>(), mpi_op(op), pginfo_->mpi_comm_);
+    return result;
+  }
+
+  template <typename T>
+  void allreduce(const T *sbuf, T *rbuf, int count, ReduceOp op) {
+    MPI_Allreduce(sbuf, rbuf, count, mpi_type<T>(), mpi_op(op), pginfo_->mpi_comm_);
   }
 
  private:

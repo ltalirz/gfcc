@@ -30,11 +30,11 @@ double  omega_delta;
 int64_t omega_npts_ip;
 int64_t lomega_npts_ip;
 double  omega_delta_e;
-double  gf_level_shift;
 double  gf_damping_factor;
 int gf_extrapolate_level;
 int gf_analyze_level;
 int gf_analyze_num_omega;
+std::vector<size_t> gf_orbitals;
 std::vector<double> gf_analyze_omega;
 
 #define GF_PGROUPS 1
@@ -116,8 +116,8 @@ void write_results_to_json(ExecutionContext& ec, SystemData& sys_data, int level
   //   r_ni_w.resize(lomega_npts,0);
   //   r_ni_A.resize(lomega_npts,0);
   // }
-  // MPI_Reduce(ni_w.data(), r_ni_w.data(), lomega_npts, MPI_DOUBLE, MPI_SUM, 0, ec.pg().comm());
-  // MPI_Reduce(ni_A.data(), r_ni_A.data(), lomega_npts, MPI_DOUBLE, MPI_SUM, 0, ec.pg().comm());
+  // ec.pg().reduce(ni_w.data(), r_ni_w.data(), lomega_npts, ReduceOp::sum, 0);
+  // ec.pg().reduce(ni_A.data(), r_ni_A.data(), lomega_npts, ReduceOp::sum, 0);
 
   if(ec.pg().rank() == 0) {
     const std::string lvl_str = "level" + std::to_string(level);
@@ -141,9 +141,7 @@ void write_string_to_disk(ExecutionContext& ec, const std::string& tstring, cons
     if (rank == 0)
         recvcounts.resize(size,0); 
 
-    MPI_Gather(&tstring_len, 1, MPI_INT,
-              &recvcounts[0], 1, MPI_INT,
-              0, ec.pg().comm());
+    ec.pg().gather(&tstring_len, recvcounts.data(), 0);
 
     /*
     * Figure out the total length of string, 
@@ -173,10 +171,8 @@ void write_string_to_disk(ExecutionContext& ec, const std::string& tstring, cons
     }
 
     // Gather strings from all ranks in pg
-    MPI_Gatherv(tstring.c_str(), tstring_len, MPI_CHAR,
-                combined_string, &recvcounts[0], &displs[0], MPI_CHAR,
-                0, ec.pg().comm());
-
+    ec.pg().gatherv(tstring.c_str(), tstring_len,
+                    combined_string, &recvcounts[0], &displs[0], 0);
 
     if (rank == 0) {
         // cout << combined_string << endl;
@@ -255,30 +251,54 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
     std::cout << gfp.str() << std::flush;
   }
 
+  ComplexTensor dtmp_a{o_alpha};  
   ComplexTensor dtmp_aaa{v_alpha,o_alpha,o_alpha};
   ComplexTensor dtmp_bab{v_beta, o_alpha,o_beta};  
-  ComplexTensor::allocate(&gec,dtmp_aaa,dtmp_bab);
+  ComplexTensor::allocate(&gec,dtmp_a,dtmp_aaa,dtmp_bab);
   
   // double au2ev = 27.2113961;
 
+  std::string dtmp_a_file   = files_prefix+".W"+gfo.str()+".r_dtmp_a.l"+levelstr;
   std::string dtmp_aaa_file = files_prefix+".W"+gfo.str()+".r_dtmp_aaa.l"+levelstr;
   std::string dtmp_bab_file = files_prefix+".W"+gfo.str()+".r_dtmp_bab.l"+levelstr;
 
-  if (fs::exists(dtmp_aaa_file) && fs::exists(dtmp_bab_file)) {
+  if (fs::exists(dtmp_a_file) && fs::exists(dtmp_aaa_file) && fs::exists(dtmp_bab_file)) {
+    read_from_disk(dtmp_a,dtmp_a_file);
     read_from_disk(dtmp_aaa,dtmp_aaa_file);
     read_from_disk(dtmp_bab,dtmp_bab_file);
   }
   else {
-    ComplexTensor DEArr_IP{V,O,O};
+    ComplexTensor DEArr_IP1{O};
+    ComplexTensor DEArr_IP2{V,O,O};
     
     double denominator = 0.0;
-    const double lshift = 1.00000000;
-    auto DEArr_lambda = [&](const IndexVector& bid) {
-      const IndexVector blockid = internal::translate_blockid(bid, DEArr_IP());
-      const TAMM_SIZE size = DEArr_IP.block_size(blockid);
+    //
+    auto DEArr_lambda1 = [&](const IndexVector& bid) {
+      const IndexVector blockid = internal::translate_blockid(bid, DEArr_IP1());
+      const TAMM_SIZE size = DEArr_IP1.block_size(blockid);
       std::vector<std::complex<T>> buf(size);
-      auto block_dims   = DEArr_IP.block_dims(blockid);
-      auto block_offset = DEArr_IP.block_offsets(blockid);
+      auto block_dims   = DEArr_IP1.block_dims(blockid);
+      auto block_offset = DEArr_IP1.block_offsets(blockid);
+      size_t c = 0;
+      for(size_t i = block_offset[0]; i < block_offset[0] + block_dims[0]; i++) {
+        denominator = gf_omega - p_evl_sorted_occ[i];
+        if (denominator < 0.0 && denominator > -1.0){
+            denominator += -1.0*gf_lshift;
+        }
+        else if (denominator > 0.0 && denominator < 1.0) {
+            denominator += 1.0*gf_lshift;
+        }
+        buf[c] = 1.0/std::complex<T>(denominator, -1.0*gf_eta);
+      }
+      DEArr_IP1.put(blockid,buf);
+    };
+    //
+    auto DEArr_lambda2 = [&](const IndexVector& bid) {
+      const IndexVector blockid = internal::translate_blockid(bid, DEArr_IP2());
+      const TAMM_SIZE size = DEArr_IP2.block_size(blockid);
+      std::vector<std::complex<T>> buf(size);
+      auto block_dims   = DEArr_IP2.block_dims(blockid);
+      auto block_offset = DEArr_IP2.block_offsets(blockid);
       size_t c = 0;
       for(size_t i = block_offset[0]; i < block_offset[0] + block_dims[0]; i++) {
       for(size_t j = block_offset[1]; j < block_offset[1] + block_dims[1]; j++) {
@@ -286,32 +306,39 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
         denominator = gf_omega + p_evl_sorted_virt[i] - p_evl_sorted_occ[j] 
                                - p_evl_sorted_occ[k];
         if (denominator < 0.0 && denominator > -1.0){
-            denominator += -1.0*lshift;
+            denominator += -1.0*gf_lshift;
         }
         else if (denominator > 0.0 && denominator < 1.0) {
-            denominator += lshift;
+            denominator += 1.0*gf_lshift;
         }
         buf[c] = 1.0/std::complex<T>(denominator, -1.0*gf_eta);
       }
       }
       }
-      DEArr_IP.put(blockid,buf);
+      DEArr_IP2.put(blockid,buf);
     };
 
-    gsch.allocate(DEArr_IP).execute();
+    gsch.allocate(DEArr_IP1).execute();
+    gsch.allocate(DEArr_IP2).execute();
     if(subcomm != MPI_COMM_NULL){
         Scheduler sub_sch{sub_ec};
-        sub_sch(DEArr_IP() = 0).execute();        
-        block_for(sub_ec, DEArr_IP(), DEArr_lambda);
+        sub_sch(DEArr_IP1() = 0).execute();        
+        sub_sch(DEArr_IP2() = 0).execute();        
+        block_for(sub_ec, DEArr_IP1(), DEArr_lambda1);
+        block_for(sub_ec, DEArr_IP2(), DEArr_lambda2);
         sub_sch      
+          (dtmp_a() = 0)
           (dtmp_aaa() = 0)
           (dtmp_bab() = 0)
-          (dtmp_aaa(p1_va,h1_oa,h2_oa) = DEArr_IP(p1_va,h1_oa,h2_oa))
-          (dtmp_bab(p1_vb,h1_oa,h2_ob) = DEArr_IP(p1_vb,h1_oa,h2_ob))
+          (dtmp_a(h1_oa) = DEArr_IP1(h1_oa))
+          (dtmp_aaa(p1_va,h1_oa,h2_oa) = DEArr_IP2(p1_va,h1_oa,h2_oa))
+          (dtmp_bab(p1_vb,h1_oa,h2_ob) = DEArr_IP2(p1_vb,h1_oa,h2_ob))
           .execute();
     }
     gec.pg().barrier();
-    gsch.deallocate(DEArr_IP).execute();
+    gsch.deallocate(DEArr_IP1).execute();
+    gsch.deallocate(DEArr_IP2).execute();
+    write_to_disk(dtmp_a,dtmp_a_file);
     write_to_disk(dtmp_aaa,dtmp_aaa_file);
     write_to_disk(dtmp_bab,dtmp_bab_file);
   }
@@ -330,6 +357,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
   const size_t num_oi = noa;
   size_t num_pi_processed = 0;
   std::vector<size_t> pi_tbp;
+  if(!gf_orbitals.empty()) pi_tbp = gf_orbitals;
   //Check pi's already processed
   for (size_t pi=0; pi < num_oi; pi++) {
     std::string x1_a_conv_wpi_file   = files_prefix+".x1_a.w"  +gfo.str()+".oi"+std::to_string(pi);
@@ -338,12 +366,12 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
 
     if(fs::exists(x1_a_conv_wpi_file) && fs::exists(x2_aaa_conv_wpi_file) && fs::exists(x2_bab_conv_wpi_file)) 
       num_pi_processed++;
-    else pi_tbp.push_back(pi);
+    else if(std::find(gf_orbitals.begin(), gf_orbitals.end(), pi) == gf_orbitals.end()) pi_tbp.push_back(pi);
   }
-
+  
   size_t num_pi_remain = num_oi-num_pi_processed;
   if(num_pi_remain == 0) {
-    gsch.deallocate(dtmp_aaa,dtmp_bab).execute();
+    gsch.deallocate(dtmp_a,dtmp_aaa,dtmp_bab).execute();
     return;
   }
   EXPECTS(num_pi_remain == pi_tbp.size());
@@ -354,6 +382,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
   if(gf_nprocs_poi > 0) subranks = gf_nprocs_poi;
 
   //Figure out how many orbitals in pi_tbp can be processed with subranks
+  //TODO: gf_nprocs_pi must be a multiple of total #ranks for best performance.
   size_t num_oi_can_bp = std::ceil(nranks / (1.0*subranks));
   if(num_pi_remain < num_oi_can_bp) {
     num_oi_can_bp = num_pi_remain;
@@ -397,12 +426,20 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
 
   int root_ppi = -1;
   MPI_Comm_rank( ec.pg().comm(), &root_ppi );
+  // for (size_t pib=0; pib < num_pi_remain; pib+=num_oi_can_bp){
+  //   size_t piv_end = num_oi_can_bp;
+  //   if(pib+num_oi_can_bp > num_pi_remain) piv_end = pib+num_oi_can_bp-num_pi_remain;
+  // for (size_t piv=0; piv < piv_end; piv++){
+  //   size_t pi = pi_tbp[piv+pib];
   int pg_id = rank.value()/subranks;
   if(root_ppi == 0) next = ac->fetch_add(0, 1);
-  MPI_Bcast(&next        ,1,mpi_type<int64_t>(),0,ec.pg().comm());
+  ec.pg().broadcast(&next,0);
 
   for (size_t piv=0; piv < pi_tbp.size(); piv++) {   
-    
+    // #if GF_PGROUPS
+    // if( (rank >= piv*subranks && rank < (piv*subranks+subranks) ) || no_pg){
+    // if(!no_pg) root_ppi = piv*subranks; //root of sub-group
+    // #endif
     if (next == taskcount) {
       total_pi_pg++;
       size_t pi = pi_tbp[piv];
@@ -421,6 +458,10 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
     ComplexTensor x1_a{o_alpha};
     ComplexTensor x2_aaa{v_alpha,o_alpha,o_alpha};
     ComplexTensor x2_bab{v_beta, o_alpha,o_beta};
+    ComplexTensor dx1_a{o_alpha};
+    ComplexTensor dx2_aaa{v_alpha,o_alpha,o_alpha};
+    ComplexTensor dx2_bab{v_beta, o_alpha,o_beta};
+    ComplexTensor Minv_a{o_alpha,o_alpha};
     Tensor<T> B1_a{o_alpha};
 
     // if(rank==0) cout << "allocate B" << endl;
@@ -450,6 +491,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
     ec.pg().barrier();
 
     sch.allocate(Hx1_a, Hx2_aaa, Hx2_bab,
+                 dx1_a, dx2_aaa, dx2_bab,
                   x1_a,  x2_aaa,  x2_bab).execute();
 
     double gf_t_guess     = 0.0;
@@ -462,6 +504,21 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
     double gf_t_dis_tot   = 0.0;
     size_t gf_iter        = 0;
 
+    sch
+      .allocate(x1,Minv,Minv_a)
+      (x1()      = 0)
+      (Minv()    = 0)        
+      (Minv_a()  = 0)        
+      .execute();
+  
+    gf_guess_ip(ec,MO,nocc,gf_omega,gf_eta,pi,p_evl_sorted_occ,t2v2_o,x1,Minv,true);
+    
+    sch
+      (x1_a(h1_oa) = x1(h1_oa))
+      (Minv_a(h1_oa,h2_oa)  = Minv(h1_oa,h2_oa))
+      .deallocate(x1,Minv)
+      .execute();
+    
     std::string x1_a_inter_wpi_file = files_prefix+".x1_a.inter.w"+gfo.str()+".oi"+std::to_string(pi);
     std::string x2_aaa_inter_wpi_file = files_prefix+".x2_aaa.inter.w"+gfo.str()+".oi"+std::to_string(pi);
     std::string x2_bab_inter_wpi_file = files_prefix+".x2_bab.inter.w"+gfo.str()+".oi"+std::to_string(pi);
@@ -471,23 +528,8 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
       read_from_disk(x2_aaa, x2_aaa_inter_wpi_file);
       read_from_disk(x2_bab, x2_bab_inter_wpi_file);
     }
-    else {
-      sch
-        .allocate(x1,Minv)
-        (x1()      = 0)
-        (Minv()    = 0)        
-        .execute();
-  
-      gf_guess_ip(ec,MO,nocc,gf_omega,gf_eta,pi,p_evl_sorted_occ,t2v2_o,x1,Minv,true);
-    
-      sch
-        (x1_a(h1_oa) = x1(h1_oa))
-        .deallocate(x1,Minv)
-        .execute();    
-    }
     
     // GMRES
-      
     ComplexTensor tmp{};
     sch.allocate(tmp).execute();
 
@@ -529,19 +571,32 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
 
       sch 
         .allocate(r1_a,  r2_aaa,  r2_bab)
-        (r1_a()   = -1.0 * Hx1_a())
-        (r2_aaa() = -1.0 * Hx2_aaa())
-        (r2_bab() = -1.0 * Hx2_bab())
-        (r1_a(h1_oa)               -= std::complex<double>(gf_omega,-1.0*gf_eta) * x1_a(h1_oa))
-        (r2_aaa(p1_va,h1_oa,h2_oa) -= std::complex<double>(gf_omega,-1.0*gf_eta) * x2_aaa(p1_va,h1_oa,h2_oa))
-        (r2_bab(p1_vb,h1_oa,h2_ob) -= std::complex<double>(gf_omega,-1.0*gf_eta) * x2_bab(p1_vb,h1_oa,h2_ob))
-        (r1_a() += B1_a());
+        (dx1_a()   = -1.0 * Hx1_a())
+        (dx2_aaa() = -1.0 * Hx2_aaa())
+        (dx2_bab() = -1.0 * Hx2_bab())
+        (dx1_a(h1_oa)               -= std::complex<double>(gf_omega,-1.0*gf_eta) * x1_a(h1_oa))
+        (dx2_aaa(p1_va,h1_oa,h2_oa) -= std::complex<double>(gf_omega,-1.0*gf_eta) * x2_aaa(p1_va,h1_oa,h2_oa))
+        (dx2_bab(p1_vb,h1_oa,h2_ob) -= std::complex<double>(gf_omega,-1.0*gf_eta) * x2_bab(p1_vb,h1_oa,h2_ob))
+        (dx1_a() += B1_a());
 
-        #ifdef USE_TALSH
-          sch.execute(ExecutionHW::GPU);
-        #else
-          sch.execute();
-        #endif
+      // applying right preconditioning
+      if (gf_preconditioning) {
+        sch
+          (r1_a(h1_oa) = dtmp_a(h1_oa) * dx1_a(h1_oa))
+          (r2_aaa(p1_va,h1_oa,h2_oa) = dtmp_aaa(p1_va,h1_oa,h2_oa) * dx2_aaa(p1_va,h1_oa,h2_oa))
+          (r2_bab(p1_vb,h1_oa,h2_ob) = dtmp_bab(p1_vb,h1_oa,h2_ob) * dx2_bab(p1_vb,h1_oa,h2_ob));
+      } else {
+        sch
+          (r1_a() = 1.0 * dx1_a())
+          (r2_aaa() = 1.0 * dx2_aaa())
+          (r2_bab() = 1.0 * dx2_bab()); 
+      }
+
+      #ifdef USE_TALSH
+        sch.execute(ExecutionHW::GPU);
+      #else
+        sch.execute();
+      #endif
 
       auto r1_a_norm   = norm(r1_a);
       auto r2_aaa_norm = norm(r2_aaa);
@@ -616,12 +671,24 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
 
         sch 
           .allocate(q1_a,q2_aaa,q2_bab)
-          (q1_a()    = 1.0 * Hx1_a())
-          (q2_aaa()  = 1.0 * Hx2_aaa())
-          (q2_bab()  = 1.0 * Hx2_bab())
-          (q1_a()   += std::complex<double>(gf_omega,-1.0*gf_eta) * Q1_a[k]())
-          (q2_aaa() += std::complex<double>(gf_omega,-1.0*gf_eta) * Q2_aaa[k]())
-          (q2_bab() += std::complex<double>(gf_omega,-1.0*gf_eta) * Q2_bab[k]());
+          (dx1_a()    = 1.0 * Hx1_a())
+          (dx2_aaa()  = 1.0 * Hx2_aaa())
+          (dx2_bab()  = 1.0 * Hx2_bab())
+          (dx1_a()   += std::complex<double>(gf_omega,-1.0*gf_eta) * Q1_a[k]())
+          (dx2_aaa() += std::complex<double>(gf_omega,-1.0*gf_eta) * Q2_aaa[k]())
+          (dx2_bab() += std::complex<double>(gf_omega,-1.0*gf_eta) * Q2_bab[k]());
+
+        if (gf_preconditioning) {
+          sch
+            (q1_a(h1_oa) = dtmp_a(h1_oa) * dx1_a(h1_oa))
+            (q2_aaa(p1_va,h1_oa,h2_oa) = dtmp_aaa(p1_va,h1_oa,h2_oa) * dx2_aaa(p1_va,h1_oa,h2_oa))
+            (q2_bab(p1_vb,h1_oa,h2_ob) = dtmp_bab(p1_vb,h1_oa,h2_ob) * dx2_bab(p1_vb,h1_oa,h2_ob));      
+        } else {
+          sch
+            (q1_a() = 1.0 * dx1_a())
+            (q2_aaa() = 1.0 * dx2_aaa())
+            (q2_bab() = 1.0 * dx2_bab());
+        }
 
         #ifdef USE_TALSH
           sch.execute(ExecutionHW::GPU);
@@ -645,17 +712,36 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
             (tmp() += 1.0 * conj_bab(p1_vb,h1_oa,h2_ob) * q2_bab(p1_vb,h1_oa,h2_ob))
             (q1_a()   -= tmp() * Q1_a[j]())
             (q2_aaa() -= tmp() * Q2_aaa[j]())
+            (q2_bab() -= tmp() * Q2_bab[j]());
+            // .deallocate(conj_a,conj_aaa,conj_bab);
+            // .execute();
+
+          #ifdef USE_TALSH
+            sch.execute(ExecutionHW::GPU);
+          #else
+            sch.execute();
+          #endif
+            
+          H(j,k) = get_scalar(tmp);
+
+          //re-orthogonalization
+          sch
+            (tmp()  = 1.0 * conj_a(h1_oa) * q1_a(h1_oa))
+            (tmp() += 0.5 * conj_aaa(p1_va,h1_oa,h2_oa) * q2_aaa(p1_va,h1_oa,h2_oa))
+            (tmp() += 1.0 * conj_bab(p1_vb,h1_oa,h2_ob) * q2_bab(p1_vb,h1_oa,h2_ob))
+            (q1_a()   -= tmp() * Q1_a[j]())
+            (q2_aaa() -= tmp() * Q2_aaa[j]())
             (q2_bab() -= tmp() * Q2_bab[j]())
             .deallocate(conj_a,conj_aaa,conj_bab);
             // .execute();
 
-            #ifdef USE_TALSH
-              sch.execute(ExecutionHW::GPU);
-            #else
-              sch.execute();
-            #endif
+          #ifdef USE_TALSH
+            sch.execute(ExecutionHW::GPU);
+          #else
+            sch.execute();
+          #endif
 
-          H(j,k) = get_scalar(tmp);
+          H(j,k) += get_scalar(tmp);
         } // j loop
 
         r1_a_norm   = norm(q1_a);
@@ -679,27 +765,39 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
         CMatrix Hsub = H.block(0,0,k+2,k+1);
         CMatrix bsub = b.block(0,0,k+2,1);
  
-        //apply givens rotation
+        //apply givens rotation for complex tensors (IMPORTANT: this is different from the real case)
         for(auto i=0; i<k; i++){
           auto temp = cn(i,0) * H(i,k) + sn(i,0) * H(i+1,k);
-          H(i+1,k) = -sn(i,0) * H(i,k) + cn(i,0) * H(i+1,k);
+          H(i+1,k) = -std::conj(sn(i,0)) * H(i,k) + cn(i,0) * H(i+1,k);
           H(i,k) = temp;
         }
   
-        // if(std::abs(H(k,k))<1e-16){
-        //   cn(k,0) = std::complex<double>(0,0);
-        //   sn(k,0) = std::complex<double>(1,0);
+        std::complex<double> scr1 = H(k,k);
+        std::complex<double> scr2 = H(k+1,k);
+        std::complex<double> s_scr = std::complex<double>(0.0,0.0);
+        double c_scr = 0.0;
+        T cnk0_r = cn(k,0).real();
+        blas::rotg(&scr1,&scr2,&cnk0_r,&sn(k,0));
+        cn(k,0) = std::complex<T>(cnk0_r,cn(k,0).imag());
+
+        // if(root_ppi==0 && debug) {
+        //   cout << "cn/sn from rotg: " << cn(k,0) << "," << sn(k,0) << endl;
+        //   auto t = sqrt(std::conj(H(k,k))*H(k,k)+std::conj(H(k+1,k))*H(k+1,k));
+        //   auto cn_t = std::abs(H(k,k))/t;
+        //   auto sn_t = H(k,k)*std::conj(H(k+1,k))/(std::abs(H(k,k))*t);
+        //   cout << "cn/sn from self-computing: " << cn_t << "," << sn_t << endl;
         // }
-        // else{
-          auto t = sqrt(H(k,k)*H(k,k)+H(k+1,k)*H(k+1,k));
-          cn(k,0) = abs(H(k,k))/t;
-          sn(k,0) = cn(k,0) * H(k+1,k)/H(k,k);
-        // }
+
+        if(root_ppi==0 && debug) {
+          // cout << "cn/sn from self-computing: " << cn(k,0) << "," << sn(k,0) << endl;
+          cout << "    k: " << k << ", Checking if H(k+1,k) is zero: " << std::setprecision(3) << 
+          -std::conj(sn(k,0))*H(k,k)+cn(k,0)*H(k+1,k) << "," << H(k,k) << "," << H(k+1,k) << endl;
+        }        
 
         H(k,k)   = cn(k,0) * H(k,k) + sn(k,0) * H(k+1,k);
         H(k+1,k) = std::complex<double>(0,0);
 
-        b(k+1,0) = -sn(k,0) * b(k,0);
+        b(k+1,0) = -std::conj(sn(k,0)) * b(k,0);
         b(k,0)   =  cn(k,0) * b(k,0);
 
         auto gf_gmres_4 = std::chrono::high_resolution_clock::now();
@@ -711,17 +809,15 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
         }// if(root_ppi==0&&debug) cout<< "k: " << k << ", error: " << std::abs(b(k+1,0)) << endl;
 
         //normalization
-        if(std::abs(b(k+1,0))>1e-2) {
-          tamm::scale_ip(q1_a,scaling);
-          tamm::scale_ip(q2_aaa,scaling);
-          tamm::scale_ip(q2_bab,scaling);
-          Q1_a.push_back(q1_a);
-          Q2_aaa.push_back(q2_aaa);
-          Q2_bab.push_back(q2_bab);
-        }
-        else {
+        tamm::scale_ip(q1_a,scaling);
+        tamm::scale_ip(q2_aaa,scaling);
+        tamm::scale_ip(q2_bab,scaling);
+        Q1_a.push_back(q1_a);
+        Q2_aaa.push_back(q2_aaa);
+        Q2_bab.push_back(q2_bab);
+
+        if(std::abs(b(k+1,0)) < gf_threshold) {
           gmres_hist = k+1;
-          sch.deallocate(q1_a,q2_aaa,q2_bab).execute();
           break;
         }
       } // k loop
@@ -729,14 +825,14 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
       auto gf_gmres_5 = std::chrono::high_resolution_clock::now();
       gftime =
         std::chrono::duration_cast<std::chrono::duration<double>>((gf_gmres_5 - gf_gmres)).count();
-      if(root_ppi==0 && debug) cout << "  pi = " << pi << ", k: " << k << ", #iter " << gf_iter << ", T(micro_tot): " << gftime << endl;
+      if(root_ppi==0 && debug) cout << "  pi: " << pi << ", k: " << k << ", gmres_hist: " << gmres_hist << ", #iter: " << gf_iter << ", T(micro_tot): " << gftime << endl;
 
       //solve a least square problem in the subspace
       CMatrix Hsub = H.block(0,0,gmres_hist,gmres_hist);
       CMatrix bsub = b.block(0,0,gmres_hist,1);
       CMatrix y = Hsub.householderQr().solve(bsub);
 
-      if(rank==0 && debug) cout << "residual: " << (bsub-Hsub*y).norm() << endl;
+      // if(rank==0 && debug) cout << "residual: " << (bsub-Hsub*y).norm() << endl;
 
       for(auto i = 0; i < gmres_hist; i++) { 
         sch
@@ -759,7 +855,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
       // gftime =
       //   std::chrono::duration_cast<std::chrono::duration<double>>((gf_gmres_6 - gf_gmres_5)).count();
       // if(root_ppi==0 && debug) cout << "  #iter " << gf_iter << ", T(least_square+X_updat+misc.): " << gftime << endl;
-          
+                
     }while(true);
 
     //deallocate memory
@@ -805,16 +901,19 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
     }      
 
     sch.deallocate(Hx1_a, Hx2_aaa, Hx2_bab,
+                   dx1_a, dx2_aaa, dx2_bab, Minv_a,
                     x1_a,  x2_aaa,  x2_bab, B1_a).execute();
 
     if(root_ppi == 0) next = ac->fetch_add(0, 1);
-    MPI_Bcast(&next,1,mpi_type<int64_t>(),0,ec.pg().comm());
+    ec.pg().broadcast(&next,0);
 
    }
-    
+    // #if GF_PGROUPS
+    // }
+    // #endif
    if(root_ppi == 0) taskcount++;
-   MPI_Bcast(&taskcount        ,1,mpi_type<int64_t>(),0,ec.pg().comm());
-  
+   ec.pg().broadcast(&taskcount,0);
+   //ec.pg().barrier();
   } //end all remaining pi 
 
   auto cc_t2 = std::chrono::high_resolution_clock::now();
@@ -843,13 +942,16 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
     std::cout << std::string(55, '-') << std::endl;
   }
 
-  gsch.deallocate(dtmp_aaa,dtmp_bab).execute();
+  gsch.deallocate(dtmp_a,dtmp_aaa,dtmp_bab).execute();
   MPI_Comm_free(&gf_comm);
 }
 
 ////////////////////_Main-///////////////////////////
 
-void gfccsd_main_driver(std::string filename) {
+void ccsd_driver();
+std::string filename; //bad, but no choice
+
+void ccsd_driver() {
 
     // std::cout << "Input file provided = " << filename << std::endl;
 
@@ -889,7 +991,6 @@ void gfccsd_main_driver(std::string filename) {
         sub_pg = ProcGroup::create_coll(subcomm);
         sub_ec = new ExecutionContext(sub_pg, DistributionKind::nw, MemoryManagerKind::ga);
     }
-    EXPECTS(subcomm != MPI_COMM_NULL);
 
     Scheduler sub_sch{*sub_ec};
 
@@ -915,7 +1016,7 @@ void gfccsd_main_driver(std::string filename) {
     std::string cholfile = files_prefix+".cholcount";
     std::string ccsdstatus = files_prefix+".ccsdstatus";
 
-    const bool is_rhf = (sys_data.scf_type == sys_data.SCFType::rhf);
+    const bool is_rhf = sys_data.is_restricted;
 
     bool ccsd_restart = ccsd_options.readt || 
         ( (fs::exists(t1file) && fs::exists(t2file)     
@@ -1118,6 +1219,8 @@ void gfccsd_main_driver(std::string filename) {
   gf_eta               = ccsd_options.gf_eta;
   gf_maxiter           = ccsd_options.gf_maxiter;
   gf_threshold         = ccsd_options.gf_threshold;
+  gf_lshift            = ccsd_options.gf_lshift;
+  gf_preconditioning   = ccsd_options.gf_preconditioning;
   omega_min_ip         = ccsd_options.gf_omega_min_ip;
   omega_max_ip         = ccsd_options.gf_omega_max_ip;
   lomega_min_ip        = ccsd_options.gf_omega_min_ip_e;
@@ -1125,13 +1228,16 @@ void gfccsd_main_driver(std::string filename) {
   omega_delta          = ccsd_options.gf_omega_delta;
   omega_delta_e        = ccsd_options.gf_omega_delta_e;
   gf_nprocs_poi        = ccsd_options.gf_nprocs_poi;  
-  gf_level_shift       = 0;
+  gf_orbitals          = ccsd_options.gf_orbitals;
   gf_damping_factor    = ccsd_options.gf_damping_factor;
   gf_extrapolate_level = ccsd_options.gf_extrapolate_level;
   gf_analyze_level     = ccsd_options.gf_analyze_level;
   gf_analyze_num_omega = ccsd_options.gf_analyze_num_omega;
   omega_npts_ip        = (omega_max_ip - omega_min_ip) / omega_delta + 1;
   lomega_npts_ip       = (lomega_max_ip - lomega_min_ip) / omega_delta_e + 1;
+
+  if(ec.pg().size() < gf_nprocs_poi) 
+    tamm_terminate("ERROR: gf_nprocs_poi cannot be greater than total number of mpi ranks provided");
 
   const int gf_p_oi = ccsd_options.gf_p_oi_range;
 
@@ -1793,6 +1899,7 @@ void gfccsd_main_driver(std::string filename) {
                 tamm_terminate("ERROR: At least one of " + x1_a_wpi_file + " and " + x2_aaa_wpi_file + " and " + x2_bab_wpi_file + " do not exist!");
               }
   
+              //TODO: schedule all iterations before executing
               if(ivec>0){
                 TiledIndexSpace tsc{otis, range(0,ivec)};
                 auto [sc] = tsc.labels<1>("all");
@@ -2035,8 +2142,8 @@ void gfccsd_main_driver(std::string filename) {
         cc_t1 = std::chrono::high_resolution_clock::now();
 
         std::vector<double> ni_w(omega_npts_ip,0);
-        std::vector<double> ni_A(omega_npts_ip,0);        
-        
+        std::vector<double> ni_A(omega_npts_ip,0);
+
         // Compute spectral function for designated omega regime
         for(int64_t ni=0;ni<omega_npts_ip;ni++) {
           std::complex<T> omega_tmp =  std::complex<T>(omega_min_ip + ni*omega_delta, -1.0*gf_eta);
@@ -2065,7 +2172,7 @@ void gfccsd_main_driver(std::string filename) {
           spf << "W = " << std::setprecision(12) << std::real(omega_tmp) << ", omega_ip_A0 =  " << omega_ip_A0[ni] << endl;
           cout << spf.str();
           ni_A[ni] = omega_ip_A0[ni];
-          ni_w[ni] = std::real(omega_tmp);          
+          ni_w[ni] = std::real(omega_tmp);
           }
         }
   
@@ -2112,7 +2219,7 @@ void gfccsd_main_driver(std::string filename) {
                 spfe << "orb_index = " << nj << ", gpp_a = " << gpp << endl;
               }
   
-              spfe << "w = " << std::setprecision(12) << std::real(omega_tmp) << ", A_a =  " << oscalar << endl;
+              spfe << "w = " << std::setprecision(12) << std::real(omega_tmp) << ", A_a =  " << oscalar << endl;              
               next = ac->fetch_add(0, 1); 
             }
             taskcount++;
@@ -2127,7 +2234,7 @@ void gfccsd_main_driver(std::string filename) {
             sys_data.results["output"]["GFCCSD"]["retarded_alpha"]["nlevels"] = level;
             write_json_data(sys_data,"GFCCSD");
           }
-  
+
           sch.deallocate(xsub_local_a,o_local_a,Cp_local_a,
                      hsub_tamm_a,bsub_tamm_a,Cp_a).execute();  
   
@@ -2230,15 +2337,38 @@ void gfccsd_main_driver(std::string filename) {
   // --------- END GF CCSD -----------
   // GA_Summarize(0);
   ec.flush_and_sync();
-  // MemoryManagerGA::destroy_coll(mgr);
+  //MemoryManagerGA::destroy_coll(mgr);
+  pg.destroy_coll();
   ec_l.flush_and_sync();
-  // MemoryManagerLocal::destroy_coll(mgr_l);  
+  //MemoryManagerLocal::destroy_coll(mgr_l);  
+  pg_l.destroy_coll();
   if(subcomm != MPI_COMM_NULL){
     (*sub_ec).flush_and_sync();
-    // MemoryManagerGA::destroy_coll(sub_mgr);
+    //MemoryManagerGA::destroy_coll(sub_mgr);
     MPI_Comm_free(&subcomm);
   }
   // delete ec;
 }
 
-#endif 
+// Main 
+int main( int argc, char* argv[] ){
+    if(argc<2){
+        std::cout << "Please provide an input file!" << std::endl;
+        return 1;
+    }
+
+    filename = std::string(argv[1]);
+    std::ifstream testinput(filename); 
+    if(!testinput){
+        std::cout << "Input file provided [" << filename << "] does not exist!" << std::endl;
+        return 1;
+    }
+
+    tamm::initialize(argc, argv);
+
+    ccsd_driver();
+
+    tamm::finalize();
+
+    return 0;
+}

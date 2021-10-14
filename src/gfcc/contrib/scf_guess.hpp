@@ -1,7 +1,7 @@
-#ifndef TAMM_SCF_GUESS_HPP_
-#define TAMM_SCF_GUESS_HPP_
+#ifndef TAMM_METHODS_SCF_GUESS_HPP_
+#define TAMM_METHODS_SCF_GUESS_HPP_
 
-#include "hf_common.hpp"
+#include "scf_common.hpp"
 
 namespace scf_guess {
 
@@ -141,16 +141,144 @@ Matrix compute_soad(const std::vector<Atom>& atoms) {
   return D;  // we use densities normalized to # of electrons/2
 }
 
+
 template<typename TensorType>
-void compute_1body_ints(ExecutionContext& ec, Tensor<TensorType>& tensor1e, 
-      std::vector<libint2::Atom>& atoms, libint2::BasisSet& shells, libint2::Operator otype,
-      std::vector<size_t>& shell_tile_map, std::vector<Tile>& AO_tiles) {
+void compute_dipole_ints(ExecutionContext& ec, const SCFVars& spvars, Tensor<TensorType>& tensorX,
+      Tensor<TensorType>& tensorY, Tensor<TensorType>& tensorZ, 
+      std::vector<libint2::Atom>& atoms, libint2::BasisSet& shells, libint2::Operator otype) {
 
     using libint2::Atom;
     using libint2::Engine;
     using libint2::Operator;
     using libint2::Shell;
     using libint2::BasisSet;
+
+    const std::vector<Tile>& AO_tiles = spvars.AO_tiles;
+    const std::vector<size_t>& shell_tile_map = spvars.shell_tile_map;
+
+    Engine engine(otype, max_nprim(shells), max_l(shells), 0);
+
+    // engine.set(otype);
+
+    // auto& buf = (engine.results());
+
+    auto compute_dipole_ints_lambda = [&](const IndexVector& blockid) {
+
+        auto bi0 = blockid[0];
+        auto bi1 = blockid[1];
+
+        const TAMM_SIZE size = tensorX.block_size(blockid);
+        auto block_dims   = tensorX.block_dims(blockid);
+        std::vector<TensorType> dbufX(size);
+        std::vector<TensorType> dbufY(size);
+        std::vector<TensorType> dbufZ(size);
+
+        auto bd1 = block_dims[1];
+
+        // cout << "blockid: [" << blockid[0] <<"," << blockid[1] << "], dims(0,1) = " <<
+        //  block_dims[0] << ", " << block_dims[1] << endl;
+
+        // auto s1 = blockid[0];
+        auto s1range_end = shell_tile_map[bi0];
+        decltype(s1range_end) s1range_start = 0l;
+        if (bi0>0) s1range_start = shell_tile_map[bi0-1]+1;
+        
+        // cout << "s1-start,end = " << s1range_start << ", " << s1range_end << endl; 
+        for (auto s1 = s1range_start; s1 <= s1range_end; ++s1) {
+          // auto bf1 = shell2bf[s1]; //shell2bf[s1]; // first basis function in
+          // this shell
+          auto n1 = shells[s1].size();
+
+          auto s2range_end = shell_tile_map[bi1];
+          decltype(s2range_end) s2range_start = 0l;
+          if (bi1>0) s2range_start = shell_tile_map[bi1-1]+1;
+
+          // cout << "s2-start,end = " << s2range_start << ", " << s2range_end << endl; 
+
+          // cout << "screend shell pair list = " << s2spl << endl;
+          for (auto s2 = s2range_start; s2 <= s2range_end; ++s2) {
+            // for (auto s2: spvars.obs_shellpair_list.at(s1)) {
+            // auto s2 = blockid[1];
+            // if (s2>s1) continue;
+          
+            if(s2>s1){
+              auto s2spl = spvars.obs_shellpair_list.at(s2);
+              if(std::find(s2spl.begin(),s2spl.end(),s1) == s2spl.end()) continue;
+            }
+            else{
+              auto s2spl = spvars.obs_shellpair_list.at(s1);
+              if(std::find(s2spl.begin(),s2spl.end(),s2) == s2spl.end()) continue;
+            }
+
+            // auto bf2 = shell2bf[s2];
+            auto n2 = shells[s2].size();
+
+            std::vector<TensorType> tbufX(n1*n2);
+            std::vector<TensorType> tbufY(n1*n2);
+            std::vector<TensorType> tbufZ(n1*n2);
+
+            // compute shell pair; return is the pointer to the buffer
+            const auto &buf = engine.compute(shells[s1], shells[s2]);
+            EXPECTS(buf.size() >= 4);
+            if (buf[0] == nullptr) continue;          
+            // "map" buffer to a const Eigen Matrix, and copy it to the
+            // corresponding blocks of the result
+
+            // cout << buf[1].size() << endl;
+            // cout << buf[2].size() << endl;
+            // cout << buf[3].size() << endl;
+            
+            Eigen::Map<const Matrix> buf_mat_X(buf[1], n1, n2);
+            Eigen::Map<Matrix>(&tbufX[0],n1,n2) = buf_mat_X;
+            Eigen::Map<const Matrix> buf_mat_Y(buf[2], n1, n2);
+            Eigen::Map<Matrix>(&tbufY[0],n1,n2) = buf_mat_Y;
+            Eigen::Map<const Matrix> buf_mat_Z(buf[3], n1, n2);
+            Eigen::Map<Matrix>(&tbufZ[0],n1,n2) = buf_mat_Z;                        
+            
+            // cout << "buf_mat_X :" << buf_mat_X << endl;
+            // cout << "buf_mat_Y :" << buf_mat_Y << endl;
+            // cout << "buf_mat_Z :" << buf_mat_Z << endl;
+
+            auto curshelloffset_i = 0U;
+            auto curshelloffset_j = 0U;
+            for(auto x=s1range_start;x<s1;x++) curshelloffset_i += AO_tiles[x];
+            for(auto x=s2range_start;x<s2;x++) curshelloffset_j += AO_tiles[x];
+
+            size_t c = 0;
+            auto dimi =  curshelloffset_i + AO_tiles[s1];
+            auto dimj =  curshelloffset_j + AO_tiles[s2];
+
+            for(size_t i = curshelloffset_i; i < dimi; i++) {
+              for(size_t j = curshelloffset_j; j < dimj; j++, c++) {
+                dbufX[i*bd1+j] = tbufX[c];
+                dbufY[i*bd1+j] = tbufY[c];
+                dbufZ[i*bd1+j] = tbufZ[c];
+              }
+            }
+          } //s2
+        } //s1
+
+        tensorX.put(blockid,dbufX);
+        tensorY.put(blockid,dbufY);
+        tensorZ.put(blockid,dbufZ);
+    };
+
+    block_for(ec, tensorX(), compute_dipole_ints_lambda);
+
+}
+
+template<typename TensorType>
+void compute_1body_ints(ExecutionContext& ec, const SCFVars& scf_vars, Tensor<TensorType>& tensor1e, 
+      std::vector<libint2::Atom>& atoms, libint2::BasisSet& shells, libint2::Operator otype) {
+
+    using libint2::Atom;
+    using libint2::Engine;
+    using libint2::Operator;
+    using libint2::Shell;
+    using libint2::BasisSet;
+
+    const std::vector<Tile>& AO_tiles = scf_vars.AO_tiles;
+    const std::vector<size_t>& shell_tile_map = scf_vars.shell_tile_map;
 
     Engine engine(otype, max_nprim(shells), max_l(shells), 0);
 
@@ -200,16 +328,16 @@ void compute_1body_ints(ExecutionContext& ec, Tensor<TensorType>& tensor1e,
 
           // cout << "screend shell pair list = " << s2spl << endl;
           for (auto s2 = s2range_start; s2 <= s2range_end; ++s2) {
-          // for (auto s2: obs_shellpair_list[s1]) {
+          // for (auto s2: scf_vars.obs_shellpair_list.at(s1)) {
           // auto s2 = blockid[1];
           // if (s2>s1) continue;
           
           if(s2>s1){
-            auto s2spl = obs_shellpair_list[s2];
+            auto s2spl = scf_vars.obs_shellpair_list.at(s2);
             if(std::find(s2spl.begin(),s2spl.end(),s1) == s2spl.end()) continue;
           }
           else{
-            auto s2spl = obs_shellpair_list[s1];
+            auto s2spl = scf_vars.obs_shellpair_list.at(s1);
             if(std::find(s2spl.begin(),s2spl.end(),s2) == s2spl.end()) continue;
           }
 
@@ -268,24 +396,211 @@ void compute_1body_ints(ExecutionContext& ec, Tensor<TensorType>& tensor1e,
 
 }
 
+void scf_diagonalize(
+  ExecutionContext& ec, const SystemData& sys_data,
+  #if defined(USE_SCALAPACK)
+        blacspp::Grid* blacs_grid,
+        scalapackpp::BlockCyclicDist2D* blockcyclic_dist,
+  #endif
+  TAMMTensors& ttensors, EigenTensors& etensors
+  ) {
+
+      // solve F C = e S C by (conditioned) transformation to F' C' = e C',
+      // where
+      // F' = X.transpose() . F . X; the original C is obtained as C = X . C'
+
+      auto rank  = ec.pg().rank();
+      Matrix& X_a     = etensors.X;
+      Matrix& F_alpha = etensors.F;
+      Matrix& C_alpha = etensors.C;
+      Matrix& X_b     = etensors.X_beta;
+      Matrix& F_beta  = etensors.F_beta;
+      Matrix& C_beta  = etensors.C_beta; 
+
+      const int64_t N = sys_data.nbf_orig;
+      const bool is_uhf = sys_data.is_unrestricted;
+      const bool is_rhf = sys_data.is_restricted;
+
+      #if defined(USE_SCALAPACK)
+        const auto& grid = *blacs_grid;
+        const auto  mb   = blockcyclic_dist->mb();
+        const auto Northo = sys_data.nbf;
+        if( grid.ipr() >= 0 and grid.ipc() >= 0 ) {
+          // std::cout << "IN SCALAPACK " << rank << std::endl; 
+          // TODO: Optimize intermediates here
+          scalapackpp::BlockCyclicMatrix<double> 
+            Fa_sca  ( grid, N,      N,      mb, mb ),
+            Xa_sca  ( grid, Northo, N,      mb, mb ), // Xa is row-major
+            Fp_sca  ( grid, Northo, Northo, mb, mb ),
+            Ca_sca  ( grid, Northo, Northo, mb, mb ),
+            TMP1_sca( grid, N,      Northo, mb, mb ),
+            TMP2_sca( grid, Northo, N,      mb, mb );
+
+          // Scatter Fock / X alpha from root
+          Fa_sca.scatter_to( N,      N, F_alpha.data(), N,      0, 0 ); 
+          Xa_sca.scatter_to( Northo, N, X_a.data(),     Northo, 0, 0 );
+
+          // Compute TMP = F * X -> F * X**T (b/c row-major)
+          scalapackpp::pgemm( scalapackpp::Op::NoTrans, scalapackpp::Op::Trans,
+                              1., Fa_sca, Xa_sca, 0., TMP1_sca );
+
+          // Compute Fp = X**T * TMP -> X * TMP (b/c row-major)
+          scalapackpp::pgemm( scalapackpp::Op::NoTrans, scalapackpp::Op::NoTrans,
+                              1., Xa_sca, TMP1_sca, 0., Fp_sca );
+
+          // Solve EVP
+          std::vector<double> eps_a( Northo );
+          scalapackpp::hereigd( scalapackpp::Job::Vec, scalapackpp::Uplo::Lower,
+                                Fp_sca, eps_a.data(), Ca_sca );
+
+          // Backtransform TMP = X * Ca -> TMP**T = Ca**T * X
+          scalapackpp::pgemm( scalapackpp::Op::Trans, scalapackpp::Op::NoTrans,
+                              1., Ca_sca, Xa_sca, 0., TMP2_sca );
+
+          // Gather results
+          if( rank == 0 ) C_alpha.resize( N, Northo );
+          TMP2_sca.gather_from( Northo, N, C_alpha.data(), Northo, 0, 0 );
+
+          if(is_uhf) {
+
+            // Scatter Fock / X beta from root
+            Fa_sca.scatter_to( N,      N, F_beta.data(), N,      0, 0 ); 
+            Xa_sca.scatter_to( Northo, N, X_b.data(),    Northo, 0, 0 );
+
+            // Compute TMP = F * X -> F * X**T (b/c row-major)
+            scalapackpp::pgemm( scalapackpp::Op::NoTrans, scalapackpp::Op::Trans,
+                                1., Fa_sca, Xa_sca, 0., TMP1_sca );
+
+            // Compute Fp = X**T * TMP -> X * TMP (b/c row-major)
+            scalapackpp::pgemm( scalapackpp::Op::NoTrans, scalapackpp::Op::NoTrans,
+                                1., Xa_sca, TMP1_sca, 0., Fp_sca );
+
+            // Solve EVP
+            std::vector<double> eps_a( Northo );
+            scalapackpp::hereigd( scalapackpp::Job::Vec, scalapackpp::Uplo::Lower,
+                                  Fp_sca, eps_a.data(), Ca_sca );
+
+            // Backtransform TMP = X * Cb -> TMP**T = Cb**T * X
+            scalapackpp::pgemm( scalapackpp::Op::Trans, scalapackpp::Op::NoTrans,
+                                1., Ca_sca, Xa_sca, 0., TMP2_sca );
+
+            // Gather results
+            if( rank == 0 ) C_beta.resize( N, Northo );
+            TMP2_sca.gather_from( Northo, N, C_beta.data(), Northo, 0, 0 );
+          
+          }
+        } // rank participates in ScaLAPACK call
+
+      #elif defined(EIGEN_DIAG)
+
+        if(is_rhf) {
+          Eigen::SelfAdjointEigenSolver<Matrix> eig_solver_alpha(X_a.transpose() * F_alpha * X_a);
+          C_alpha = X_a * eig_solver_alpha.eigenvectors();
+        }
+        if(is_uhf) {
+          Eigen::SelfAdjointEigenSolver<Matrix> eig_solver_alpha(X_a.transpose() * F_alpha * X_a);
+          C_alpha = X_a * eig_solver_alpha.eigenvectors();
+          Eigen::SelfAdjointEigenSolver<Matrix> eig_solver_beta( X_b.transpose() * F_beta  * X_b);
+          C_beta  = X_b * eig_solver_beta.eigenvectors();      
+        }
+
+      #else
+    
+        if(is_rhf) {
+          const int64_t Northo_a = sys_data.nbf; //X_a.cols();
+          if( rank == 0 ) {
+            Matrix Fp = F_alpha; // XXX: Can F be destroyed?
+            C_alpha.resize(N,Northo_a);
+            blas::gemm( blas::Layout::ColMajor, blas::Op::NoTrans, blas::Op::Trans, N, Northo_a, N,
+                                1., Fp.data(), N, X_a.data(), Northo_a, 
+                                0., C_alpha.data(), N );
+            blas::gemm( blas::Layout::ColMajor, blas::Op::NoTrans, blas::Op::NoTrans, Northo_a, Northo_a, N,
+                                1., X_a.data(), Northo_a, C_alpha.data(), N, 
+                                0., Fp.data(), Northo_a );
+            std::vector<double> eps_a(Northo_a);
+            lapack::syevd( lapack::Job::Vec, lapack::Uplo::Lower, Northo_a, Fp.data(), Northo_a, eps_a.data() );
+            blas::gemm( blas::Layout::ColMajor, blas::Op::Trans, blas::Op::NoTrans, Northo_a, N, Northo_a, 
+                                1., Fp.data(), Northo_a, X_a.data(), Northo_a, 
+                                0., C_alpha.data(), Northo_a );
+          } 
+          // else C_alpha.resize( N, Northo_a );
+
+          // if( ec.pg().size() > 1 )
+          // ec.pg().broadcast( C_alpha.data(), C_alpha.size(), 0 );
+        }
+
+        if(is_uhf) {
+          const int64_t Northo_a = sys_data.nbf; //X_a.cols();
+          const int64_t Northo_b = sys_data.nbf; //X_b.cols();
+          if( rank == 0 ) {
+            //alpha
+            Matrix Fp = F_alpha; 
+            C_alpha.resize(N,Northo_a);
+            blas::gemm( blas::Layout::ColMajor, blas::Op::NoTrans, blas::Op::Trans, N, Northo_a, N,
+                                1., Fp.data(), N, X_a.data(), Northo_a, 
+                                0., C_alpha.data(), N );
+            blas::gemm( blas::Layout::ColMajor, blas::Op::NoTrans, blas::Op::NoTrans, Northo_a, Northo_a, N,
+                                1., X_a.data(), Northo_a, C_alpha.data(), N, 
+                                0., Fp.data(), Northo_a );
+            std::vector<double> eps_a(Northo_a);
+            lapack::syevd( lapack::Job::Vec, lapack::Uplo::Lower, Northo_a, Fp.data(), Northo_a, eps_a.data() );
+            blas::gemm( blas::Layout::ColMajor, blas::Op::Trans, blas::Op::NoTrans, Northo_a, N, Northo_a, 
+                                1., Fp.data(), Northo_a, X_a.data(), Northo_a, 
+                                0., C_alpha.data(), Northo_a );
+            //beta
+            Fp = F_beta; 
+            C_beta.resize(N,Northo_b);
+            blas::gemm( blas::Layout::ColMajor, blas::Op::NoTrans, blas::Op::Trans, N, Northo_b, N,
+                                1., Fp.data(), N, X_b.data(), Northo_b, 
+                                0., C_beta.data(), N );
+            blas::gemm( blas::Layout::ColMajor, blas::Op::NoTrans, blas::Op::NoTrans, Northo_b, Northo_b, N,
+                                1., X_b.data(), Northo_b, C_beta.data(), N, 
+                                0., Fp.data(), Northo_b );
+            std::vector<double> eps_b(Northo_b);
+            lapack::syevd( lapack::Job::Vec, lapack::Uplo::Lower, Northo_b, Fp.data(), Northo_b, eps_b.data() );
+            blas::gemm( blas::Layout::ColMajor, blas::Op::Trans, blas::Op::NoTrans, Northo_b, N, Northo_b, 
+                                1., Fp.data(), Northo_b, X_b.data(), Northo_b, 
+                                0., C_beta.data(), Northo_b );
+          } 
+          // else {
+          //   C_alpha.resize(N, Northo_a);
+          //   C_beta.resize(N, Northo_b);
+          // }
+        
+          // if( ec.pg().size() > 1 ) {
+          //   ec.pg().broadcast( C_alpha.data(), C_alpha.size(), 0 );
+          //   ec.pg().broadcast( C_beta.data(),  C_beta.size(),  0 );
+          // }
+        }
+
+      #endif
+
+}
+
 template<typename TensorType>
-void compute_initial_guess(ExecutionContext& ec, SystemData& sys_data,
+void compute_initial_guess(ExecutionContext& ec, 
+#if defined(USE_SCALAPACK)
+      blacspp::Grid* blacs_grid,
+      scalapackpp::BlockCyclicDist2D* blockcyclic_dist,
+#endif
+    SystemData& sys_data, SCFVars& scf_vars,
     const std::vector<libint2::Atom>& atoms, const libint2::BasisSet& shells,
     const std::string& basis, bool is_spherical, EigenTensors& etensors,
     TAMMTensors& ttensors, int charge, int multiplicity){
 
     auto ig1 = std::chrono::high_resolution_clock::now();
 
-    const bool is_uhf = (sys_data.scf_type == sys_data.SCFType::uhf);
-    const bool is_rhf = (sys_data.scf_type == sys_data.SCFType::rhf);
+    const bool is_uhf = sys_data.is_unrestricted;
+    const bool is_rhf = sys_data.is_restricted;
 
     const auto rank       = ec.pg().rank();
     const auto world_size = ec.pg().size();
-    const auto N = nbasis(shells);
+    const auto N          = nbasis(shells);
+    const bool debug      = sys_data.options_map.scf_options.debug;
 
     // const Matrix& H   = etensors.H; 
-    const Matrix& X_a = etensors.X;
-    const Matrix& X_b = etensors.X_beta;
+    // const Matrix& X_a = etensors.X;
+    // const Matrix& X_b = etensors.X_beta;
     Matrix& C_a       = etensors.C;
     Matrix& C_b       = etensors.C_beta;
     Matrix& D_a       = etensors.D;
@@ -311,7 +626,7 @@ void compute_initial_guess(ExecutionContext& ec, SystemData& sys_data,
     else minbs.set_pure(false);  // use cartesian gaussians  
 
     #ifndef NDEBUG
-      std::tie(minbs_shellpair_list, minbs_shellpair_data) = compute_shellpairs(minbs);
+      std::tie(scf_vars.minbs_shellpair_list, scf_vars.minbs_shellpair_data) = compute_shellpairs(minbs);
     #endif
 
     if(rank == 0) std::cout << std::endl << 
@@ -334,11 +649,13 @@ void compute_initial_guess(ExecutionContext& ec, SystemData& sys_data,
     Matrix G_a = Matrix::Zero(N,N);
     Matrix G_b;
     if(is_uhf) G_b = Matrix::Zero(N,N);
-    Tensor<TensorType> F1tmp{tAOt, tAOt}; //not allocated
-    Tensor<TensorType> F1tmp1_a{tAO, tAO};
-    Tensor<TensorType> F1tmp1_b{tAO, tAO};
+    Tensor<TensorType> F_dummy{scf_vars.tAOt, scf_vars.tAOt}; //not allocated
+    Tensor<TensorType> F1tmp1_a{scf_vars.tAO, scf_vars.tAO};
+    Tensor<TensorType> F1tmp1_b{scf_vars.tAO, scf_vars.tAO};
     Tensor<TensorType>::allocate(&ec, F1tmp1_a);
     if(is_uhf) Tensor<TensorType>::allocate(&ec,F1tmp1_b);
+
+    auto do_t1 = std::chrono::high_resolution_clock::now();
 
     // construct the 2-electron repulsion integrals engine
     using libint2::Operator;
@@ -368,8 +685,8 @@ void compute_initial_guess(ExecutionContext& ec, SystemData& sys_data,
         auto s2 = blockid[1];
         // if(s2>s1) return;
 
-        auto sp12_iter = obs_shellpair_data.at(s1).begin();
-        auto s2spl = obs_shellpair_list[s1];
+        auto sp12_iter = scf_vars.obs_shellpair_data.at(s1).begin();
+        auto s2spl = scf_vars.obs_shellpair_list.at(s1);
         auto s2_itr = std::find(s2spl.begin(),s2spl.end(),s2);
         if(s2_itr == s2spl.end()) return;
         auto s2_pos = std::distance(s2spl.begin(),s2_itr);
@@ -388,13 +705,13 @@ void compute_initial_guess(ExecutionContext& ec, SystemData& sys_data,
           auto s4_fence = D_is_shelldiagonal ? s3 + 1 : D_bs.size();
 
           #ifndef NDEBUG
-            auto sp34_iter = minbs_shellpair_data.at(s3).begin();
+            auto sp34_iter = scf_vars.minbs_shellpair_data.at(s3).begin();
           #endif
 
           for (decltype(s1) s4 = s4_begin; s4 != s4_fence; ++s4) {
 
             #ifndef NDEBUG
-              auto s4spl = minbs_shellpair_list[s3];
+              auto s4spl = scf_vars.minbs_shellpair_list.at(s3);
               auto s4_itr = std::find(s4spl.begin(),s4spl.end(),s4);
               if(s4_itr == s4spl.end()) continue;
               auto s4_pos = std::distance(s4spl.begin(),s4_itr);
@@ -480,7 +797,20 @@ void compute_initial_guess(ExecutionContext& ec, SystemData& sys_data,
         }
     };
 
-    block_for(ec, F1tmp(), compute_2body_fock_general_lambda);
+    // block_for(ec, F_dummy(), compute_2body_fock_general_lambda);
+    for (Eigen::Index i1=0;i1<etensors.taskmap.rows();i1++)
+    for (Eigen::Index j1=0;j1<etensors.taskmap.cols();j1++) {
+      if(etensors.taskmap(i1,j1)==-1 || etensors.taskmap(i1,j1) != rank) continue;
+      IndexVector blockid{(tamm::Index)i1,(tamm::Index)j1};
+      compute_2body_fock_general_lambda(blockid);
+    }
+    ec.pg().barrier();       
+
+    auto do_t2 = std::chrono::high_resolution_clock::now();
+    auto do_time =
+    std::chrono::duration_cast<std::chrono::duration<double>>((do_t2 - do_t1)).count();
+
+    if(rank == 0 && debug) std::cout << "Time to compute Fock Matrix: " << do_time << " secs" << std::endl;
 
     if(is_rhf) {
       //symmetrize the result
@@ -527,102 +857,16 @@ void compute_initial_guess(ExecutionContext& ec, SystemData& sys_data,
       Tensor<TensorType>::deallocate(F1tmp1_b);
     }
 
+    //allocated only on rank 0
+    etensors.F = Ft_a;
+    if(is_uhf) etensors.F_beta = Ft_b;
 
-    // solve F C = e S C by (conditioned) transformation to F' C' = e C',
-    // where
-    // F' = X.transpose() . F . X; the original C is obtained as C = X . C'
-    #ifdef SCALAPACK
-      //TODO
-      if(is_rhf) {
-        Eigen::SelfAdjointEigenSolver<Matrix> eig_solver(X_a.transpose() * Ft_a * X_a);
-        C_a = X_a * eig_solver.eigenvectors();
-      }
-      if(is_uhf) {
-        Eigen::SelfAdjointEigenSolver<Matrix> eig_solver(X_a.transpose() * Ft_a * X_a);
-        C_a = X_a * eig_solver.eigenvectors();
-        Eigen::SelfAdjointEigenSolver<Matrix> eig_solver(X_b.transpose() * Ft_a * X_b);
-        C_b = X_b * eig_solver.eigenvectors();
-      }
-
-    #elif defined(EIGEN_DIAG)
-      if(is_rhf) {
-        Eigen::SelfAdjointEigenSolver<Matrix> eig_solver(X_a.transpose() * Ft_a * X_a);
-        C_a = X_a * eig_solver.eigenvectors();
-      }
-      if(is_uhf) {
-        Eigen::SelfAdjointEigenSolver<Matrix> eig_solver(X_a.transpose() * Ft_a * X_a);
-        C_a = X_a * eig_solver.eigenvectors();
-        Eigen::SelfAdjointEigenSolver<Matrix> eig_solver(X_b.transpose() * Ft_a * X_b);
-        C_b = X_b * eig_solver.eigenvectors();
-      }
-    #else
-      
-      if(is_rhf) {
-        const int64_t Northo_a = sys_data.nbf; //X_a.cols();
-        if( rank == 0 ) {// TODO: Check for linear dep case
-          C_a.resize(N,Northo_a);
-          linalg::blas::gemm( 'N', 'T', N, Northo_a, N,
-                              1., Ft_a.data(), N, X_a.data(), Northo_a, 
-                              0., C_a.data(), N );
-          linalg::blas::gemm( 'N', 'N', Northo_a, Northo_a, N,
-                              1., X_a.data(), Northo_a, C_a.data(), N, 
-                              0., Ft_a.data(), Northo_a );
-          //Ft = X.transpose() * Ft * X;
-          std::vector<double> eps_a(Northo_a);
-          linalg::lapack::syevd( 'V', 'L', Northo_a, Ft_a.data(), Northo_a, eps_a.data() );
-          linalg::blas::gemm( 'T', 'N', Northo_a, N, Northo_a, 
-                              1., Ft_a.data(), Northo_a, X_a.data(), Northo_a, 
-                              0., C_a.data(), Northo_a );
-        } 
-        // else C_a.resize(N, Northo_a);
-          
-        // if( world_size > 1 ) 
-        //   MPI_Bcast( C_a.data(), C_a.size(), MPI_DOUBLE, 0, ec.pg().comm() );
-      }
-
-      if(is_uhf) {
-        const int64_t Northo_a = sys_data.nbf; //X_a.cols();
-        const int64_t Northo_b = sys_data.nbf; //X_b.cols();
-        if( rank == 0 ) {
-          //alpha
-          C_a.resize(N,Northo_a);
-          linalg::blas::gemm( 'N', 'T', N, Northo_a, N,
-                              1., Ft_a.data(), N, X_a.data(), Northo_a, 
-                              0., C_a.data(), N );
-          linalg::blas::gemm( 'N', 'N', Northo_a, Northo_a, N,
-                              1., X_a.data(), Northo_a, C_a.data(), N, 
-                              0., Ft_a.data(), Northo_a );
-          std::vector<double> eps_a(Northo_a);
-          linalg::lapack::syevd( 'V', 'L', Northo_a, Ft_a.data(), Northo_a, eps_a.data() );
-          linalg::blas::gemm( 'T', 'N', Northo_a, N, Northo_a, 
-                              1., Ft_a.data(), Northo_a, X_a.data(), Northo_a, 
-                              0., C_a.data(), Northo_a );
-          //beta
-          C_b.resize(N,Northo_b);
-          linalg::blas::gemm( 'N', 'T', N, Northo_b, N,
-                              1., Ft_b.data(), N, X_b.data(), Northo_b, 
-                              0., C_b.data(), N );
-          linalg::blas::gemm( 'N', 'N', Northo_b, Northo_b, N,
-                              1., X_b.data(), Northo_b, C_b.data(), N, 
-                              0., Ft_b.data(), Northo_b );
-          std::vector<double> eps_b(Northo_b);
-          linalg::lapack::syevd( 'V', 'L', Northo_b, Ft_b.data(), Northo_b, eps_b.data() );
-          linalg::blas::gemm( 'T', 'N', Northo_b, N, Northo_b, 
-                              1., Ft_b.data(), Northo_b, X_b.data(), Northo_b, 
-                              0., C_b.data(), Northo_b );
-        } 
-        // else {
-        //   C_a.resize(N, Northo_a);
-        //   C_b.resize(N, Northo_b);
-        // }
-
-        // if( world_size > 1 ) {
-        //   MPI_Bcast( C_a.data(), C_a.size(), MPI_DOUBLE, 0, ec.pg().comm() );
-        //   MPI_Bcast( C_b.data(), C_b.size(), MPI_DOUBLE, 0, ec.pg().comm() );
-        // }
-      }
-
+    scf_diagonalize(ec,sys_data,
+    #if defined(USE_SCALAPACK)
+          blacs_grid,
+          blockcyclic_dist,
     #endif
+    ttensors,etensors);
 
     // compute density
     if( rank == 0 ) {
@@ -645,10 +889,10 @@ void compute_initial_guess(ExecutionContext& ec, SystemData& sys_data,
 
 }
 
-// FIXME:UNCOMMENT
+// [WIP] guess by computing atom scf
 #if 0
 template<typename TensorType>
-void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
+void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data, const SCFVars& scf_vars,
                       const std::vector<libint2::Atom>& atoms, const libint2::BasisSet& shells,
                       const std::string& basis, bool is_spherical,  EigenTensors& etensors,
                       int charge, int multiplicity){
@@ -656,8 +900,8 @@ void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
     const auto rank       = ec.pg().rank();
     const auto world_size = ec.pg().size();
 
-    const bool is_uhf = (sys_data.scf_type == sys_data.SCFType::uhf);
-    const bool is_rhf = (sys_data.scf_type == sys_data.SCFType::rhf);
+    const bool is_uhf = sys_data.is_unrestricted;
+    const bool is_rhf = sys_data.is_restricted;
 
     int neutral_charge = sys_data.nelectrons + charge;
     // double N_to_Neu  = (double)sys_data.nelectrons/neutral_charge;
@@ -717,7 +961,7 @@ void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
       if(is_spherical) minbs_atom.set_pure(true);
       else minbs_atom.set_pure(false);  // use cartesian gaussians  
       #ifndef NDEBUG
-        std::tie(minbs_shellpair_list_atom, minbs_shellpair_data_atom) = compute_shellpairs(minbs_atom);
+        std::tie(scf_vars.minbs_shellpair_list_atom, scf_vars.minbs_shellpair_data_atom) = compute_shellpairs(minbs_atom);
       #endif
       // if(rank == 0) cout << "construct shell info for sto-3g" << endl;
 
@@ -728,7 +972,7 @@ void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
       // if(rank == 0) cout << "construct shell info for present basis" << endl;
 
       size_t nao_atom = nbasis(shells_atom);
-      std::tie(obs_shellpair_list_atom, obs_shellpair_data_atom) = compute_shellpairs(shells_atom);
+      std::tie(scf_vars.obs_shellpair_list_atom, scf_vars.obs_shellpair_data_atom) = compute_shellpairs(shells_atom);
       // if(rank == 0) cout << "compute shell pairs for present basis" << endl;
 
       tamm::Tile tile_size_atom = sys_data.options_map.scf_options.AO_tilesize; 
@@ -842,8 +1086,8 @@ void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
         auto n1 = obs[s1].size();       // number of basis functions in this shell
 
         auto s2 = blockid[1];
-        auto sp12_iter = obs_shellpair_data_atom.at(s1).begin();
-        auto s2spl = obs_shellpair_list_atom[s1];
+        auto sp12_iter = scf_vars.obs_shellpair_data_atom.at(s1).begin();
+        auto s2spl = scf_vars.obs_shellpair_list_atom.at(s1);
         auto s2_itr = std::find(s2spl.begin(),s2spl.end(),s2);
         if(s2_itr == s2spl.end()) return;
         auto s2_pos = std::distance(s2spl.begin(),s2_itr);
@@ -868,7 +1112,7 @@ void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
           for (decltype(s1) s4 = s4_begin; s4 != s4_fence; ++s4) {
 
             #ifndef NDEBUG
-              auto s4spl = minbs_shellpair_list_atom[s3];
+              auto s4spl = scf_vars.minbs_shellpair_list_atom.at(s3);
               auto s4_itr = std::find(s4spl.begin(),s4spl.end(),s4);
               if(s4_itr == s4spl.end()) continue;
               auto s4_pos = std::distance(s4spl.begin(),s4_itr);
@@ -1025,10 +1269,10 @@ void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
           auto s1 = blockid[0];
           auto bf1_first = shell2bf[s1]; 
           auto n1 = obs[s1].size();
-          auto sp12_iter = obs_shellpair_data_atom.at(s1).begin();
+          auto sp12_iter = scf_vars.obs_shellpair_data_atom.at(s1).begin();
 
           auto s2 = blockid[1];
-          auto s2spl = obs_shellpair_list_atom[s1];
+          auto s2spl = scf_vars.obs_shellpair_list_atom.at(s1);
           auto s2_itr = std::find(s2spl.begin(),s2spl.end(),s2);
           if(s2_itr == s2spl.end()) return;
           auto s2_pos = std::distance(s2spl.begin(),s2_itr);
@@ -1050,10 +1294,10 @@ void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
                       std::max(D_shblk_norm_atom(s2, s3), Dnorm12))
                     : 0.;
 
-            auto sp34_iter = obs_shellpair_data_atom.at(s3).begin();
+            auto sp34_iter = scf_vars.obs_shellpair_data_atom.at(s3).begin();
 
             const auto s4_max = (s1 == s3) ? s2 : s3;
-            for (const auto& s4 : obs_shellpair_list_atom[s3]) {
+            for (const auto& s4 : scf_vars.obs_shellpair_list_atom.at(s3)) {
               if (s4 > s4_max)
                 break;  
               
@@ -1192,4 +1436,67 @@ void compute_sad_guess(ExecutionContext& ec, SystemData& sys_data,
 }
 #endif
 
-#endif //TAMM_SCF_GUESS_HPP_
+template<typename TensorType>
+std::tuple<std::vector<int>,std::vector<int>,std::vector<int>> 
+    compute_initial_guess_taskinfo(ExecutionContext& ec, SystemData& sys_data, 
+    const SCFVars& scf_vars, const std::vector<libint2::Atom>& atoms,
+    const libint2::BasisSet& shells, const std::string& basis, bool is_spherical,
+    EigenTensors& etensors, TAMMTensors& ttensors, int charge, int multiplicity) {
+
+    const auto rank       = ec.pg().rank();
+
+    // compute guess in minimal basis
+    libint2::BasisSet minbs("STO-3G", atoms);
+    if(is_spherical) minbs.set_pure(true);
+    else minbs.set_pure(false);  // use cartesian gaussians  
+
+    bool D_is_shelldiagonal = true;
+    const libint2::BasisSet& obs  = shells;
+    const libint2::BasisSet& D_bs = minbs;
+
+    auto shell2bf   = obs.shell2bf();
+
+    std::vector<int> s1vec;
+    std::vector<int> s2vec;
+    std::vector<int> ntask_vec;
+    
+    auto compute_2body_fock_general_lambda = [&](IndexVector blockid) {
+
+        auto s1 = blockid[0];
+        auto bf1_first = shell2bf[s1];  // first basis function in this shell
+        auto n1 = obs[s1].size();       // number of basis functions in this shell
+
+        auto s2 = blockid[1];
+        // if(s2>s1) return;
+
+        auto sp12_iter = scf_vars.obs_shellpair_data.at(s1).begin();
+        auto s2spl = scf_vars.obs_shellpair_list.at(s1);
+        auto s2_itr = std::find(s2spl.begin(),s2spl.end(),s2);
+        if(s2_itr == s2spl.end()) return;
+        auto s2_pos = std::distance(s2spl.begin(),s2_itr);
+
+        std::advance(sp12_iter,s2_pos);
+
+        size_t taskid = 0;
+
+        for (decltype(s1) s3 = 0; s3 < D_bs.size(); ++s3) {
+          
+          auto s4_begin = D_is_shelldiagonal ? s3 : 0;
+          auto s4_fence = D_is_shelldiagonal ? s3 + 1 : D_bs.size();
+
+          for (decltype(s1) s4 = s4_begin; s4 != s4_fence; ++s4) {
+            if (s3 >= s4) taskid++;
+            taskid++;
+          }
+        }
+        s1vec.push_back(s1);
+        s2vec.push_back(s2);
+        ntask_vec.push_back(taskid);        
+    };
+
+    block_for(ec, ttensors.F_dummy(), compute_2body_fock_general_lambda);
+    return std::make_tuple(s1vec,s2vec,ntask_vec);
+
+}
+
+#endif //TAMM_METHODS_SCF_GUESS_HPP_

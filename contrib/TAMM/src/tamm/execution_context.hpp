@@ -268,9 +268,10 @@ public:
 
     RuntimeEngine* re() const { return re_.get(); }
 
-    void set_re(RuntimeEngine* re) {
-        re_.reset(re);
-    }
+    void set_re(RuntimeEngine* re); 
+    // {
+    //     re_.reset(re);
+    // }
 
     /**
      * @brief Flush communication in this execution context, synchronize, and
@@ -329,7 +330,7 @@ public:
     std::stringstream& get_profile_data() { return profile_data_; }
 
 #if defined(USE_DPCPP)
-    std::vector<cl::sycl::queue*> get_syclQue() const {
+    std::vector<sycl::queue*> get_syclQue() const {
         return vec_syclQue;
     }
 #endif
@@ -391,7 +392,7 @@ private:
     bool has_gpu_;
     int dev_id_=-1;
 #if defined(USE_DPCPP)
-    std::vector<cl::sycl::queue*> vec_syclQue;
+    std::vector<sycl::queue*> vec_syclQue;
 #endif
 
     std::stringstream profile_data_;

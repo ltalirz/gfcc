@@ -10,11 +10,12 @@ set(GFCC_INCLUDES
     gf_ccsd.hpp  gf_guess.hpp      gfccsd_ip.hpp
     contrib/ccsd_util.hpp          contrib/cd_svd_ga.hpp  
     contrib/cd_ccsd_os_ann.hpp     contrib/diis.hpp       
-    contrib/hf_common.hpp          contrib/scf_guess.hpp
-    contrib/hartree_fock_tamm.hpp  contrib/hf_tamm_common.hpp  
+    contrib/scf_iter.hpp           contrib/scf_guess.hpp
+    contrib/scf_main.hpp           contrib/scf_common.hpp
+    contrib/scf_taskmap.hpp        contrib/molden.hpp
     contrib/json_data.hpp          contrib/misc.hpp  
-    contrib/cd_ccsd_os_ann.hpp  contrib/two_index_transform.hpp
-    contrib/input_parser.hpp       contrib/linalg.hpp contrib/molden.hpp
+    contrib/cd_ccsd_os_ann.hpp     contrib/two_index_transform.hpp
+    contrib/input_parser.hpp       
    )
 
 set(GFCC_CFLAGS )
