@@ -21,7 +21,9 @@ int gf_nprocs_poi;
 double  gf_omega;
 size_t  p_oi; //number of occupied/all MOs
 double  gf_eta;
+double  gf_lshift;
 double  gf_threshold;
+bool    gf_preconditioning;
 double  omega_min_ip;
 double  omega_max_ip;
 double  lomega_min_ip;
@@ -775,7 +777,6 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
         std::complex<double> scr1 = H(k,k);
         std::complex<double> scr2 = H(k+1,k);
         std::complex<double> s_scr = std::complex<double>(0.0,0.0);
-        double c_scr = 0.0;
         T cnk0_r = cn(k,0).real();
         blas::rotg(&scr1,&scr2,&cnk0_r,&sn(k,0));
         cn(k,0) = std::complex<T>(cnk0_r,cn(k,0).imag());
@@ -947,11 +948,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
 }
 
 ////////////////////_Main-///////////////////////////
-
-void ccsd_driver();
-std::string filename; //bad, but no choice
-
-void ccsd_driver() {
+void gfccsd_main_driver(std::string filename) {
 
     // std::cout << "Input file provided = " << filename << std::endl;
 
@@ -2350,25 +2347,5 @@ void ccsd_driver() {
   // delete ec;
 }
 
-// Main 
-int main( int argc, char* argv[] ){
-    if(argc<2){
-        std::cout << "Please provide an input file!" << std::endl;
-        return 1;
-    }
 
-    filename = std::string(argv[1]);
-    std::ifstream testinput(filename); 
-    if(!testinput){
-        std::cout << "Input file provided [" << filename << "] does not exist!" << std::endl;
-        return 1;
-    }
-
-    tamm::initialize(argc, argv);
-
-    ccsd_driver();
-
-    tamm::finalize();
-
-    return 0;
-}
+#endif

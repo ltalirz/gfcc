@@ -7,9 +7,9 @@
 #include "tamm/tamm.hpp"
 #include "tamm/eigen_utils.hpp"
 
-#include "common/misc.hpp"
-#include "common/molden.hpp"
-#include "common/json_data.hpp"
+#include "misc.hpp"
+#include "molden.hpp"
+#include "json_data.hpp"
 
 #if defined(USE_SCALAPACK)
 #include <blacspp/grid.hpp>
