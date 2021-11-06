@@ -53,13 +53,13 @@ class ProcGroup {
    * @return ProcGroup New ProcGroup object that duplicates @param mpi_comm and
    * creates the corresponding GA process group
    */
-  static ProcGroup create_coll(MPI_Comm mpi_comm) {
+  static ProcGroup create_coll(MPI_Comm mpi_comm, MPI_Comm parent_comm=MPI_COMM_NULL, int parent_ga_pg=-1) {
     MPI_Comm comm_out;
     MPI_Comm_dup(mpi_comm, &comm_out);
     ProcGroup pg;
     pg.pginfo_->mpi_comm_ = comm_out;
     pg.pginfo_->created_mpi_comm_ = true;
-    pg.pginfo_->ga_pg_ = create_ga_process_group_coll(mpi_comm);
+    pg.pginfo_->ga_pg_ = create_ga_process_group_coll(mpi_comm, parent_comm, parent_ga_pg);
     pg.pginfo_->created_ga_pg_ = true;
     pg.pginfo_->is_valid_ = (mpi_comm != MPI_COMM_NULL);
     return pg;
@@ -298,14 +298,15 @@ class ProcGroup {
    * @param pg TAMM process group
    * @return GA processes group on this TAMM process group
    */
-  static int create_ga_process_group_coll(MPI_Comm comm) {
+  static int create_ga_process_group_coll(MPI_Comm comm, MPI_Comm parent_comm=MPI_COMM_NULL, int parent_ga_pg=-1) {
     int nranks;
     MPI_Comm_size(comm, &nranks);
     MPI_Group group, group_world;
     int ranks[nranks], ranks_world[nranks];
     MPI_Comm_group(comm, &group);
 
-    MPI_Comm_group(GA_MPI_Comm(), &group_world);
+    if(parent_comm == MPI_COMM_NULL) MPI_Comm_group(GA_MPI_Comm(), &group_world);
+    else MPI_Comm_group(parent_comm, &group_world);
 
     for (int i = 0; i < nranks; i++) {
       ranks[i] = i;
@@ -313,7 +314,8 @@ class ProcGroup {
     MPI_Group_translate_ranks(group, nranks, ranks, group_world, ranks_world);
 
     int ga_pg_default = GA_Pgroup_get_default();
-    GA_Pgroup_set_default(GA_Pgroup_get_world());
+    if(parent_comm == MPI_COMM_NULL) GA_Pgroup_set_default(GA_Pgroup_get_world());
+    else GA_Pgroup_set_default(parent_ga_pg);
     int ga_pg = GA_Pgroup_create(ranks_world, nranks);
     GA_Pgroup_set_default(ga_pg_default);
     return ga_pg;

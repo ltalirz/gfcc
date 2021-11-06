@@ -465,32 +465,41 @@ std::vector<TensorType> diagonal(Tensor<TensorType> tensor) {
 template<typename TensorType>
 std::vector<TensorType> diagonal(LabeledTensor<TensorType> ltensor) {
     ExecutionContext& ec = get_ec(ltensor);
-    Tensor<TensorType> tensor = ltensor.tensor();
-    // Defined only for NxN tensors
-    EXPECTS(tensor.num_modes() == 2);
 
-    LabelLoopNest loop_nest{ltensor.labels()};
-    std::vector<TensorType> dest;
+    std::vector<TensorType> dvec;
+    
+    if(ec.pg().rank() == 0) {
+        Tensor<TensorType> tensor = ltensor.tensor();
+        // Defined only for NxN tensors
+        EXPECTS(tensor.num_modes() == 2);
 
-    for(const IndexVector& bid : loop_nest) {
-        const IndexVector blockid = internal::translate_blockid(bid, ltensor);
+        LabelLoopNest loop_nest{ltensor.labels()};
 
-        if(blockid[0] == blockid[1]) {
-            const TAMM_SIZE size = tensor.block_size(blockid);
-            std::vector<TensorType> buf(size);
-            tensor.get(blockid, buf);
-            auto block_dims   = tensor.block_dims(blockid);
-            auto block_offset = tensor.block_offsets(blockid);
-            auto dim          = block_dims[0];
-            auto offset       = block_offset[0];
-            size_t i          = 0;
-            for(auto p = offset; p < offset + dim; p++, i++) {
-                dest.push_back(buf[i * dim + i]);
+        for(const IndexVector& bid : loop_nest) {
+            const IndexVector blockid = internal::translate_blockid(bid, ltensor);
+
+            if(blockid[0] == blockid[1]) {
+                const TAMM_SIZE size = tensor.block_size(blockid);
+                std::vector<TensorType> buf(size);
+                tensor.get(blockid, buf);
+                auto block_dims   = tensor.block_dims(blockid);
+                auto block_offset = tensor.block_offsets(blockid);
+                auto dim          = block_dims[0];
+                auto offset       = block_offset[0];
+                size_t i          = 0;
+                for(auto p = offset; p < offset + dim; p++, i++) {
+                    dvec.push_back(buf[i * dim + i]);
+                }
             }
         }
     }
 
-    return dest;
+    int dsize = (int) dvec.size();
+    ec.pg().broadcast(&dsize, 0);
+    if(ec.pg().rank() != 0) dvec.resize(dsize); 
+    ec.pg().broadcast(dvec.data(), dsize, 0);
+
+    return dvec;
 }
 
 /**
@@ -569,7 +578,6 @@ std::tuple<int, int> get_subgroup_info(ExecutionContext& gec, Tensor<TensorType>
     int subranks = nagg * ppn;
     if(subranks > nranks) subranks = nranks;
 
-    //TODO: following does not work if gec was created via MPI_Group_incl.
     MPI_Group group; //, world_group;
     // MPI_Comm_group(GA_MPI_Comm(), &world_group);
     auto comm = gec.pg().comm();
@@ -688,6 +696,9 @@ void write_to_disk(Tensor<TensorType> tensor, const std::string& filename,
     MPI_Comm io_comm;
     int rank = gec.pg().rank().value();
     auto [nagg,ppn] = get_subgroup_info(gec,tensor,io_comm,nagg_hint);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
+
     int ga_tens;
     if(!tammio) ga_tens = tamm_to_ga(gec,tensor);
     size_t ndims = tensor.num_modes();
@@ -705,7 +716,7 @@ void write_to_disk(Tensor<TensorType> tensor, const std::string& filename,
     hid_t hdf5_dt = get_hdf5_dt<TensorType>();
 
     if(io_comm != MPI_COMM_NULL) {
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(io_comm)};
+        ProcGroup pg = ProcGroup::create_coll(io_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
         auto ltensor = tensor();
         LabelLoopNest loop_nest{ltensor.labels()};  
@@ -894,6 +905,9 @@ void write_to_disk_mpiio(Tensor<TensorType> tensor, const std::string& filename,
     MPI_Comm io_comm;
     int rank = gec.pg().rank().value();
     auto [nagg,ppn] = get_subgroup_info(gec,tensor,io_comm,nagg_hint);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
+
     int ga_tens;
     if(!tammio) ga_tens = tamm_to_ga(gec,tensor);
     size_t ndims = tensor.num_modes();
@@ -901,7 +915,7 @@ void write_to_disk_mpiio(Tensor<TensorType> tensor, const std::string& filename,
     if(rank == 0 && profile) std::cout << "write to disk using: " << nppn << std::endl;
 
     if(io_comm != MPI_COMM_NULL) {
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(io_comm)};
+        ProcGroup pg = ProcGroup::create_coll(io_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
 
         MPI_File fh;
@@ -1113,6 +1127,8 @@ void read_from_disk(Tensor<TensorType> tensor, const std::string& filename,
     MPI_Comm io_comm;
     int rank = gec.pg().rank().value();
     auto [nagg,ppn] = get_subgroup_info(gec,tensor,io_comm,nagg_hint);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
 
     const std::string nppn = std::to_string(nagg) + "n," + std::to_string(ppn) + "ppn";
     if(rank == 0 && profile) std::cout << "read from disk using: " << nppn << std::endl;
@@ -1136,7 +1152,7 @@ void read_from_disk(Tensor<TensorType> tensor, const std::string& filename,
     if(io_comm != MPI_COMM_NULL) {
         auto tensor_back = tensor;         
 
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(io_comm)};
+        ProcGroup pg = ProcGroup::create_coll(io_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
 
         if(wtensor.num_modes()>0) 
@@ -1336,6 +1352,8 @@ void read_from_disk_mpiio(Tensor<TensorType> tensor, const std::string& filename
     MPI_Comm io_comm;
     int rank = gec.pg().rank().value();
     auto [nagg,ppn] = get_subgroup_info(gec,tensor,io_comm,nagg_hint);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
 
     const std::string nppn = std::to_string(nagg) + "n," + std::to_string(ppn) + "ppn";
     if(rank == 0 && profile) std::cout << "read from disk using: " << nppn << std::endl;
@@ -1357,7 +1375,7 @@ void read_from_disk_mpiio(Tensor<TensorType> tensor, const std::string& filename
     if(io_comm != MPI_COMM_NULL) {
         auto tensor_back = tensor;         
 
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(io_comm)};
+        ProcGroup pg = ProcGroup::create_coll(io_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
 
         MPI_File fh;
@@ -1608,9 +1626,11 @@ TensorType linf_norm(LabeledTensor<TensorType> ltensor) {
     MPI_Comm sub_comm;
     int rank = gec.pg().rank().value();
     get_subgroup_info(gec,tensor,sub_comm);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
 
     if(sub_comm != MPI_COMM_NULL) {
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(sub_comm)};
+        ProcGroup pg = ProcGroup::create_coll(sub_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
 
         auto getnorm = [&](const IndexVector& bid) {
@@ -1789,9 +1809,11 @@ void apply_ewise_ip(LabeledTensor<TensorType> ltensor,
 
     MPI_Comm sub_comm;
     get_subgroup_info(gec,tensor,sub_comm);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
 
     if(sub_comm != MPI_COMM_NULL) {
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(sub_comm)};
+        ProcGroup pg = ProcGroup::create_coll(sub_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
 
         auto lambda = [&](const IndexVector& bid) {
@@ -2006,9 +2028,11 @@ TensorType sum(LabeledTensor<TensorType> ltensor) {
     MPI_Comm sub_comm;
     int rank = gec.pg().rank().value();
     get_subgroup_info(gec,tensor,sub_comm);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
 
     if(sub_comm != MPI_COMM_NULL) {
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(sub_comm)};
+        ProcGroup pg = ProcGroup::create_coll(sub_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
 
         auto getnorm = [&](const IndexVector& bid) {
@@ -2074,9 +2098,11 @@ TensorType norm(LabeledTensor<TensorType> ltensor) {
     MPI_Comm sub_comm;
     int rank = gec.pg().rank().value();
     get_subgroup_info(gec,tensor,sub_comm);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
 
     if(sub_comm != MPI_COMM_NULL) {
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(sub_comm)};
+        ProcGroup pg = ProcGroup::create_coll(sub_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
 
         auto getnorm = [&](const IndexVector& bid) {
@@ -2254,9 +2280,11 @@ void gf_peak(LabeledTensor<TensorType> ltensor, double threshold, double x_norm_
     MPI_Comm sub_comm;
     int rank = gec.pg().rank().value();
     get_subgroup_info(gec,tensor,sub_comm);
+    MPI_Comm parent_comm = gec.pg().comm();
+    int pga_pg = gec.pg().ga_pg();
 
     if(sub_comm != MPI_COMM_NULL) {
-        ProcGroup pg = ProcGroup {ProcGroup::create_coll(sub_comm)};
+        ProcGroup pg = ProcGroup::create_coll(sub_comm, parent_comm, pga_pg);
         ExecutionContext ec{pg, DistributionKind::nw, MemoryManagerKind::ga};
         auto nmodes               = tensor.num_modes();
 

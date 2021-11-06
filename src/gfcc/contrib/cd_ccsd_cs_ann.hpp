@@ -71,6 +71,8 @@ void ccsd_e_cs(/* ExecutionContext &ec, */
 	   "de() += -1.0 * _a02_aa(h1_oa, h2_oa, cind) * _a02_aa(h2_oa, h1_oa, cind)")
        (de() +=  1.0 * _a03_aa(h1_oa, p1_va, cind) * chol3d_aa_ov(h1_oa, p1_va, cind), 
 	   "de() +=  1.0 * _a03_aa(h1_oa, p1_va, cind) * chol3d_aa_ov(h1_oa, p1_va, cind)")
+       (de() +=  2.0 * t1_aa(p1_va, h1_oa) * f1_aa_ov(h1_oa, p1_va),
+       "de() +=  2.0 * t1_aa(p1_va, h1_oa) * f1_aa_ov(h1_oa, p1_va)") // NEW TERM
        ;
 
 }
@@ -100,12 +102,18 @@ void ccsd_t1_cs(/* ExecutionContext& ec,  */
     //    (_a02(cind)                      =  2.0 * _a01_aa(h1_oa, h1_oa, cind))
        (_a05_aa(h2_oa, p1_va)           = -1.0 * chol3d_aa_ov(h1_oa, p1_va, cind) * _a01_aa(h2_oa, h1_oa, cind), 
 	   "_a05_aa(h2_oa, p1_va)           = -1.0 * chol3d_aa_ov(h1_oa, p1_va, cind) * _a01_aa(h2_oa, h1_oa, cind)")         // o2vm
-       .exact_copy(_a05_bb(h1_ob,p1_vb),_a05_aa(h1_ob,p1_vb))
+       (_a05_aa(h2_oa, p1_va)          +=  1.0 * f1_aa_ov(h2_oa, p1_va),
+       "_a05_aa(h2_oa, p1_va)          +=  1.0 * f1_aa_ov(h2_oa, p1_va)") // NEW TERM
+    //    .exact_copy(_a05_bb(h1_ob,p1_vb),_a05_aa(h1_ob,p1_vb))
 
        (_a03_aa_vo(p1_va, h1_oa, cind)  = -1.0 * t2_aaaa_temp(p1_va, p2_va, h1_oa, h2_oa) * chol3d_aa_ov(h2_oa, p2_va, cind), 
 	   "_a03_aa_vo(p1_va, h1_oa, cind)  = -1.0 * t2_aaaa_temp(p1_va, p2_va, h1_oa, h2_oa) * chol3d_aa_ov(h2_oa, p2_va, cind)") // o2v2m
-       (_a04_aa(h2_oa, h1_oa)           =  1.0 * chol3d_aa_ov(h2_oa, p1_va, cind) * _a03_aa_vo(p1_va, h1_oa, cind), 
-	   "_a04_aa(h2_oa, h1_oa)           =  1.0 * chol3d_aa_ov(h2_oa, p1_va, cind) * _a03_aa_vo(p1_va, h1_oa, cind)")      // o2vm
+       (_a04_aa(h2_oa, h1_oa)           = -1.0 * f1_aa_oo(h2_oa, h1_oa), 
+       "_a04_aa(h2_oa, h1_oa)           = -1.0 * f1_aa_oo(h2_oa, h1_oa)") // MOVED TERM
+       (_a04_aa(h2_oa, h1_oa)          +=  1.0 * chol3d_aa_ov(h2_oa, p1_va, cind) * _a03_aa_vo(p1_va, h1_oa, cind), 
+	   "_a04_aa(h2_oa, h1_oa)          +=  1.0 * chol3d_aa_ov(h2_oa, p1_va, cind) * _a03_aa_vo(p1_va, h1_oa, cind)")      // o2vm
+       (_a04_aa(h2_oa, h1_oa)          += -1.0 * t1_aa(p1_va, h1_oa) * f1_aa_ov(h2_oa, p1_va),
+       "_a04_aa(h2_oa, h1_oa)          += -1.0 * t1_aa(p1_va, h1_oa) * f1_aa_ov(h2_oa, p1_va)") // NEW TERM
        (i0_aa(p2_va, h1_oa)            +=  1.0 * t1_aa(p2_va, h2_oa) * _a04_aa(h2_oa, h1_oa), 
 	   "i0_aa(p2_va, h1_oa)            +=  1.0 * t1_aa(p2_va, h2_oa) * _a04_aa(h2_oa, h1_oa)")                            // o2v
        (i0_aa(p1_va, h2_oa)            +=  1.0 * chol3d_aa_ov(h2_oa, p1_va, cind) * _a02(cind), 
@@ -126,8 +134,8 @@ void ccsd_t1_cs(/* ExecutionContext& ec,  */
 	   "_a01_aa(h2_oa, h1_oa, cind)    +=  1.0 * chol3d_aa_oo(h2_oa, h1_oa, cind)")                                       // o2m
        (i0_aa(p2_va, h1_oa)            +=  1.0 * _a01_aa(h2_oa, h1_oa, cind) * _a03_aa_vo(p2_va, h2_oa, cind), 
 	   "i0_aa(p2_va, h1_oa)            +=  1.0 * _a01_aa(h2_oa, h1_oa, cind) * _a03_aa_vo(p2_va, h2_oa, cind)")           // o2vm
-       (i0_aa(p2_va, h1_oa)            += -1.0 * t1_aa(p2_va, h2_oa) * f1_aa_oo(h2_oa, h1_oa), 
-	   "i0_aa(p2_va, h1_oa)            += -1.0 * t1_aa(p2_va, h2_oa) * f1_aa_oo(h2_oa, h1_oa)")                           // o2v
+    //    (i0_aa(p2_va, h1_oa)            += -1.0 * t1_aa(p2_va, h2_oa) * f1_aa_oo(h2_oa, h1_oa), // MOVED ABOVE
+	//    "i0_aa(p2_va, h1_oa)            += -1.0 * t1_aa(p2_va, h2_oa) * f1_aa_oo(h2_oa, h1_oa)")                           // o2v
        (i0_aa(p2_va, h1_oa)            +=  1.0 * t1_aa(p1_va, h1_oa) * f1_aa_vv(p2_va, p1_va), 
 	   "i0_aa(p2_va, h1_oa)            +=  1.0 * t1_aa(p1_va, h1_oa) * f1_aa_vv(p2_va, p1_va)")                           // ov2
        ;
@@ -194,6 +202,8 @@ void ccsd_t2_cs(/* ExecutionContext& ec, */
 		"_a017_aa(p1_va, h2_oa, cind)           += -1.0  * chol3d_aa_ov(h2_oa, p1_va, cind)")
         (_a001_aa(p2_va, p1_va)                 += -1.0  * f1_aa_vv(p2_va, p1_va), 
 		"_a001_aa(p2_va, p1_va)                 += -1.0  * f1_aa_vv(p2_va, p1_va)")
+        (_a001_aa(p2_va, p1_va)                 +=  1.0  * t1_aa(p2_va, h1_oa) * f1_aa_ov(h1_oa, p1_va),
+        "_a001_aa(p2_va, p1_va)                 +=  1.0  * t1_aa(p2_va, h1_oa) * f1_aa_ov(h1_oa, p1_va)") // NEW TERM
         (_a006_aa(h2_oa, h1_oa)                 +=  1.0  * f1_aa_oo(h2_oa, h1_oa), 
 		"_a006_aa(h2_oa, h1_oa)                 +=  1.0  * f1_aa_oo(h2_oa, h1_oa)")
         (_a006_aa(h2_oa, h1_oa)                 +=  1.0  * t1_aa(p1_va, h1_oa) * f1_aa_ov(h2_oa, p1_va), 

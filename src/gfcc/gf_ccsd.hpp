@@ -244,7 +244,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
   auto rank = gec.pg().rank();
 
   std::stringstream gfo;
-  gfo << std::defaultfloat << gf_omega;
+  gfo << std::fixed << std::setprecision(2) << gf_omega;
 
   // PRINT THE HEADER FOR GF-CCSD ITERATIONS
   if(rank == 0) {
@@ -612,8 +612,9 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
         std::chrono::duration_cast<std::chrono::duration<double>>((gf_gmres - gf_gmres_0)).count();
       if(root_ppi==0 && debug) {
         cout << "----------------" << endl;
-        cout << "  #iter " << gf_iter << ", T(x_update contraction): " << gftime << endl;
-        cout << std::defaultfloat << "  w,oi (" << gfo.str() << "," << pi << "), residual = " << gf_residual << std::endl;
+        cout << "  #iter " << gf_iter << ", T(x_update contraction): " << std::fixed << std::setprecision(6) << gftime << endl;
+        cout << std::fixed << std::setprecision(2) << "  w,oi (" << gfo.str() << "," << pi << 
+                "), residual = " << std::fixed << std::setprecision(6) << gf_residual << std::endl;
       }
 
       if(std::abs(gf_residual) < gf_threshold || gf_iter > gf_maxiter) {
@@ -701,7 +702,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
         auto gf_gmres_2 = std::chrono::high_resolution_clock::now();
         double gftime =
           std::chrono::duration_cast<std::chrono::duration<double>>((gf_gmres_2 - gf_gmres_1)).count();
-        if(root_ppi==0 && debug) cout << "    k: " << k << ", T(gfcc contraction): " << gftime << endl;
+        if(root_ppi==0 && debug) cout << "    k: " << k << ", T(gfcc contraction): " << std::fixed << std::setprecision(6) << gftime << endl;
 
         // Arnoldi iteration or G-S orthogonalization
         for(auto j=0; j<=k; j++) {
@@ -791,8 +792,8 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
 
         if(root_ppi==0 && debug) {
           // cout << "cn/sn from self-computing: " << cn(k,0) << "," << sn(k,0) << endl;
-          cout << "    k: " << k << ", Checking if H(k+1,k) is zero: " << std::setprecision(3) << 
-          -std::conj(sn(k,0))*H(k,k)+cn(k,0)*H(k+1,k) << "," << H(k,k) << "," << H(k+1,k) << endl;
+          cout << "    k: " << k << ", Checking if H(k+1,k) is zero: " << std::fixed << std::setprecision(6) << 
+          -std::conj(sn(k,0))*H(k,k)+cn(k,0)*H(k+1,k) << endl; //"," << H(k,k) << "," << H(k+1,k) << endl;
         }        
 
         H(k,k)   = cn(k,0) * H(k,k) + sn(k,0) * H(k+1,k);
@@ -898,7 +899,7 @@ void gfccsd_driver_ip_a(ExecutionContext& gec, ExecutionContext& sub_ec, MPI_Com
         gf_stats += gfacc_str("|----------updating x1/x2 : ",std::to_string(gf_t_upd_tot));
         gf_stats += gfacc_str("|----------diis update    : ",std::to_string(gf_t_dis_tot));
       }
-      std::cout << std::defaultfloat << gf_stats << std::flush;
+      std::cout << std::fixed << std::setprecision(6) << gf_stats << std::flush;
     }      
 
     sch.deallocate(Hx1_a, Hx2_aaa, Hx2_bab,
@@ -1230,8 +1231,8 @@ void gfccsd_main_driver(std::string filename) {
   gf_extrapolate_level = ccsd_options.gf_extrapolate_level;
   gf_analyze_level     = ccsd_options.gf_analyze_level;
   gf_analyze_num_omega = ccsd_options.gf_analyze_num_omega;
-  omega_npts_ip        = (omega_max_ip - omega_min_ip) / omega_delta + 1;
-  lomega_npts_ip       = (lomega_max_ip - lomega_min_ip) / omega_delta_e + 1;
+  omega_npts_ip        = std::ceil((omega_max_ip - omega_min_ip) / omega_delta + 1);
+  lomega_npts_ip       = std::ceil((lomega_max_ip - lomega_min_ip) / omega_delta_e + 1);
 
   if(ec.pg().size() < gf_nprocs_poi) 
     tamm_terminate("ERROR: gf_nprocs_poi cannot be greater than total number of mpi ranks provided");
@@ -1293,7 +1294,7 @@ void gfccsd_main_driver(std::string filename) {
       T omega_tmp =  omega_min_ip + ni*omega_delta;
       omega_space_ip.push_back(omega_tmp);
     }
-    if (rank==0) cout << "Freq. space (before doing MOR): " << omega_space_ip << endl;
+    if (rank==0) cout << "Freq. space (before doing MOR): " << std::fixed << std::setprecision(2) << omega_space_ip << endl;
   }
 
     auto restart_time_end = std::chrono::high_resolution_clock::now();
@@ -1773,16 +1774,17 @@ void gfccsd_main_driver(std::string filename) {
         auto qr_rank = omega_extra_finished.size() * noa;
 
         TiledIndexSpace otis;
-        if(ndiis > qr_rank){
-          diis_tis = {IndexSpace{range(0,ndiis)}};
-          otis = {diis_tis, range(0,qr_rank)};
-        }
-        else{
+        // if(ndiis > qr_rank){
+        //   diis_tis = {IndexSpace{range(0,ndiis)}};
+        //   otis = {diis_tis, range(0,qr_rank)};
+        // }
+        // else{
           otis = {IndexSpace{range(qr_rank)}};
-          diis_tis = {otis,range(0,ndiis)};
-        }
+          // diis_tis = {otis,range(0,ndiis)};
+        // }
 
-        TiledIndexSpace unit_tis{diis_tis,range(0,1)};
+        TiledIndexSpace otis_opt = {IndexSpace{range(qr_rank)}, ccsd_options.tilesize};
+        TiledIndexSpace unit_tis{otis,range(0,1)};
         // auto [u1] = unit_tis.labels<1>("all");
 
         for(auto x: omega_extra) {
@@ -1808,14 +1810,23 @@ void gfccsd_main_driver(std::string filename) {
                               nptsi,unit_tis,files_prefix,levelstr,noa);
           }
           else if(rank==0) cout << endl << "Restarting freq: " << gf_omega << endl;
+          auto ni = std::round((x-omega_min_ip)/omega_delta);
+          omega_ip_conv_a[ni] = true;
         }
  
+        bool q_exist = fs::exists(q1_a_file) && fs::exists(q2_aaa_file) && fs::exists(q2_bab_file);
+
         ComplexTensor  q1_tamm_a{o_alpha,otis};
         ComplexTensor  q2_tamm_aaa{v_alpha,o_alpha,o_alpha,otis};
         ComplexTensor  q2_tamm_bab{v_beta, o_alpha,o_beta, otis};
-        ComplexTensor Hx1_tamm_a{o_alpha,otis};   
-        ComplexTensor Hx2_tamm_aaa{v_alpha,o_alpha,o_alpha,otis};
-        ComplexTensor Hx2_tamm_bab{v_beta, o_alpha,o_beta, otis};
+        if(q_exist) {
+          q1_tamm_a   = {o_alpha,otis_opt};
+          q2_tamm_aaa = {v_alpha,o_alpha,o_alpha,otis_opt};
+          q2_tamm_bab = {v_beta, o_alpha,o_beta, otis_opt};
+        }
+        ComplexTensor Hx1_tamm_a{o_alpha,otis_opt};   
+        ComplexTensor Hx2_tamm_aaa{v_alpha,o_alpha,o_alpha,otis_opt};
+        ComplexTensor Hx2_tamm_bab{v_beta,o_alpha,o_beta,otis_opt};
   
         if(!gf_restart) {
           auto cc_t1 = std::chrono::high_resolution_clock::now();
@@ -1831,19 +1842,37 @@ void gfccsd_main_driver(std::string filename) {
           
           decltype(qr_rank) ivec_start = 0;
           bool prev_q12 = fs::exists(pq1_a_file) && fs::exists(pq2_aaa_file) && fs::exists(pq2_bab_file);
-  
-          if(prev_q12) {
+
+          if(prev_q12 && !q_exist) {
+            TiledIndexSpace otis_prev_opt = {IndexSpace{range(0,prev_qr_rank)}, ccsd_options.tilesize};            
             TiledIndexSpace otis_prev{otis,range(0,prev_qr_rank)};
             auto [op1] = otis_prev.labels<1>("all");
-            ComplexTensor q1_prev_a  {o_alpha,otis_prev};
-            ComplexTensor q2_prev_aaa{v_alpha,o_alpha,o_alpha,otis_prev};
-            ComplexTensor q2_prev_bab{v_beta, o_alpha,o_beta, otis_prev};
+            ComplexTensor q1_prev_a  {o_alpha,otis_prev_opt};
+            ComplexTensor q2_prev_aaa{v_alpha,o_alpha,o_alpha,otis_prev_opt};
+            ComplexTensor q2_prev_bab{v_beta, o_alpha,o_beta, otis_prev_opt};
             sch.allocate(q1_prev_a,q2_prev_aaa,q2_prev_bab).execute();
   
             read_from_disk(q1_prev_a,pq1_a_file);
             read_from_disk(q2_prev_aaa,pq2_aaa_file);
             read_from_disk(q2_prev_bab,pq2_bab_file);
-            
+
+            { //retile q1 prev a,aaa,bab tensors
+              int q1_prev_a_ga   = tamm_to_ga(ec,q1_prev_a);
+              int q2_prev_aaa_ga = tamm_to_ga(ec,q2_prev_aaa);
+              int q2_prev_bab_ga = tamm_to_ga(ec,q2_prev_bab);
+              sch.deallocate(q1_prev_a, q2_prev_aaa, q2_prev_bab).execute();
+
+              q1_prev_a   = {o_alpha,otis_prev};
+              q2_prev_aaa = {v_alpha,o_alpha,o_alpha,otis_prev};
+              q2_prev_bab = {v_beta, o_alpha,o_beta, otis_prev};        
+              sch.allocate(q1_prev_a, q2_prev_aaa, q2_prev_bab).execute();
+
+              ga_to_tamm(ec,q1_prev_a,q1_prev_a_ga);
+              ga_to_tamm(ec,q2_prev_aaa,q2_prev_aaa_ga);
+              ga_to_tamm(ec,q2_prev_bab,q2_prev_bab_ga);
+              NGA_Destroy(q1_prev_a_ga); NGA_Destroy(q2_prev_aaa_ga); NGA_Destroy(q2_prev_bab_ga);    
+            }
+
             ivec_start = prev_qr_rank;
   
             if(subcomm != MPI_COMM_NULL){
@@ -1857,7 +1886,7 @@ void gfccsd_main_driver(std::string filename) {
   
           auto cc_t2 = std::chrono::high_resolution_clock::now();
           double time  = std::chrono::duration_cast<std::chrono::duration<double>>((cc_t2 - cc_t1)).count();
-          if(rank == 0) cout << endl << "Time to read in pre-computed Q1/Q2: " << time << " secs" << endl;
+          if(rank == 0) cout << endl << "Time to read in pre-computed Q1/Q2: " << std::fixed << std::setprecision(6) << time << " secs" << endl;
   
           ComplexTensor q1_tmp_a{o_alpha};
           ComplexTensor q2_tmp_aaa{v_alpha,o_alpha,o_alpha};
@@ -1869,7 +1898,6 @@ void gfccsd_main_driver(std::string filename) {
           double time_gs_norm = 0.0;
           double total_time_gs  = 0.0;
   
-          bool q_exist = fs::exists(q1_a_file) && fs::exists(q2_aaa_file) && fs::exists(q2_bab_file);
   
           if(!q_exist){
             sch.allocate(q1_tmp_a, q2_tmp_aaa, q2_tmp_bab).execute();
@@ -1881,7 +1909,7 @@ void gfccsd_main_driver(std::string filename) {
               auto W_read = omega_extra_finished[ivec/(noa)];
               auto pi_read = ivec%(noa);
               std::stringstream gfo;
-              gfo << std::defaultfloat << W_read;
+              gfo << std::fixed << std::setprecision(2) << W_read;
               
               std::string x1_a_wpi_file = files_prefix+".x1_a.w"+gfo.str()+".oi"+std::to_string(pi_read);
               std::string x2_aaa_wpi_file = files_prefix+".x2_aaa.w"+gfo.str()+".oi"+std::to_string(pi_read);
@@ -1900,8 +1928,10 @@ void gfccsd_main_driver(std::string filename) {
               if(ivec>0){
                 TiledIndexSpace tsc{otis, range(0,ivec)};
                 auto [sc] = tsc.labels<1>("all");
-  
-                ComplexTensor oscalar{tsc};
+                TiledIndexSpace tsc_opt = {IndexSpace{range(0,ivec)}, ccsd_options.tilesize};
+                auto [sc_opt] = tsc_opt.labels<1>("all");
+
+                ComplexTensor oscalar{tsc_opt};
                 ComplexTensor x1c_a{o_alpha,tsc};
                 ComplexTensor x2c_aaa{v_alpha,o_alpha,o_alpha,tsc};
                 ComplexTensor x2c_bab{v_beta, o_alpha,o_beta, tsc};
@@ -1918,28 +1948,71 @@ void gfccsd_main_driver(std::string filename) {
                     (x2c_bab(p1_vb,h1_oa,h2_ob,sc) = q2_tamm_bab(p1_vb,h1_oa,h2_ob,sc))
                     .execute();      
   
-                    tamm::conj_ip(x1c_a);
-                    tamm::conj_ip(x2c_aaa);
-                    tamm::conj_ip(x2c_bab); 
+                { //retile x1c a,aaa,bab tensors
+                  int x1c_a_ga   = tamm_to_ga(ec,x1c_a);
+                  int x2c_aaa_ga = tamm_to_ga(ec,x2c_aaa);
+                  int x2c_bab_ga = tamm_to_ga(ec,x2c_bab);
+                  sch.deallocate(x1c_a,x2c_aaa,x2c_bab).execute();
+
+                  x1c_a   = {o_alpha,tsc_opt};
+                  x2c_aaa = {v_alpha,o_alpha,o_alpha,tsc_opt};
+                  x2c_bab = {v_beta, o_alpha,o_beta, tsc_opt};
+                  sch.allocate(x1c_a,x2c_aaa,x2c_bab).execute();
+
+                  ga_to_tamm(ec,x1c_a,x1c_a_ga);
+                  ga_to_tamm(ec,x2c_aaa,x2c_aaa_ga);
+                  ga_to_tamm(ec,x2c_bab,x2c_bab_ga);
+                  NGA_Destroy(x1c_a_ga); NGA_Destroy(x2c_aaa_ga); NGA_Destroy(x2c_bab_ga);
+                }
+
+                ComplexTensor x1c_a_conj   = tamm::conj(x1c_a);
+                ComplexTensor x2c_aaa_conj = tamm::conj(x2c_aaa);
+                ComplexTensor x2c_bab_conj = tamm::conj(x2c_bab); 
   
                 #if GF_GS_SG
                   sub_sch.allocate
                 #else
                   sch.allocate
                 #endif
+
+                    // 1st GS
                     (oscalar)
-                    (oscalar(sc)  = -1.0 * q1_tmp_a(h1_oa) * x1c_a(h1_oa,sc))
-                    (oscalar(sc) += -0.5 * q2_tmp_aaa(p1_va,h1_oa,h2_oa) * x2c_aaa(p1_va,h1_oa,h2_oa,sc))
-                    (oscalar(sc) += -1.0 * q2_tmp_bab(p1_vb,h1_oa,h2_ob) * x2c_bab(p1_vb,h1_oa,h2_ob,sc))
+                    (oscalar(sc_opt)  = -1.0 * q1_tmp_a(h1_oa) * x1c_a_conj(h1_oa,sc_opt))
+                    (oscalar(sc_opt) += -0.5 * q2_tmp_aaa(p1_va,h1_oa,h2_oa) * x2c_aaa_conj(p1_va,h1_oa,h2_oa,sc_opt))
+                    (oscalar(sc_opt) += -1.0 * q2_tmp_bab(p1_vb,h1_oa,h2_ob) * x2c_bab_conj(p1_vb,h1_oa,h2_ob,sc_opt))
   
-                    (q1_tmp_a(h1_oa) += oscalar(sc) * q1_tamm_a(h1_oa,sc))
-                    (q2_tmp_aaa(p1_va,h1_oa,h2_oa) += oscalar(sc) * q2_tamm_aaa(p1_va,h1_oa,h2_oa,sc))
-                    (q2_tmp_bab(p1_vb,h1_oa,h2_ob) += oscalar(sc) * q2_tamm_bab(p1_vb,h1_oa,h2_ob,sc))
-                    .deallocate(x1c_a,x2c_aaa,x2c_bab,oscalar).execute();
-                #if GF_GS_SG
-                }
-                ec.pg().barrier();
-                #endif
+                    (q1_tmp_a(h1_oa) += oscalar(sc_opt) * x1c_a(h1_oa,sc_opt))
+                    (q2_tmp_aaa(p1_va,h1_oa,h2_oa) += oscalar(sc_opt) * x2c_aaa(p1_va,h1_oa,h2_oa,sc_opt))
+                    (q2_tmp_bab(p1_vb,h1_oa,h2_ob) += oscalar(sc_opt) * x2c_bab(p1_vb,h1_oa,h2_ob,sc_opt))
+
+                    // 2nd GS
+                    (oscalar(sc_opt)  = -1.0 * q1_tmp_a(h1_oa) * x1c_a_conj(h1_oa,sc_opt))
+                    (oscalar(sc_opt) += -0.5 * q2_tmp_aaa(p1_va,h1_oa,h2_oa) * x2c_aaa_conj(p1_va,h1_oa,h2_oa,sc_opt))
+                    (oscalar(sc_opt) += -1.0 * q2_tmp_bab(p1_vb,h1_oa,h2_ob) * x2c_bab_conj(p1_vb,h1_oa,h2_ob,sc_opt))
+  
+                    (q1_tmp_a(h1_oa) += oscalar(sc_opt) * x1c_a(h1_oa,sc_opt))
+                    (q2_tmp_aaa(p1_va,h1_oa,h2_oa) += oscalar(sc_opt) * x2c_aaa(p1_va,h1_oa,h2_oa,sc_opt))
+                    (q2_tmp_bab(p1_vb,h1_oa,h2_ob) += oscalar(sc_opt) * x2c_bab(p1_vb,h1_oa,h2_ob,sc_opt))
+                    .deallocate(oscalar,x1c_a,x2c_aaa,x2c_bab,x1c_a_conj,x2c_aaa_conj,x2c_bab_conj);
+                    // end of 2nd GS
+
+
+                  #if GF_IN_SG
+                    #ifdef USE_TALSH
+                      sub_sch.execute(ExecutionHW::GPU);
+                    #else
+                      sub_sch.execute();
+                    #endif
+                  }
+                  ec.pg().barrier();
+                  #else
+                    #ifdef USE_TALSH
+                      sch.execute(ExecutionHW::GPU);
+                    #else
+                      sch.execute();
+                    #endif
+                  #endif
+
               }
   
               auto cc_t1 = std::chrono::high_resolution_clock::now();
@@ -1973,6 +2046,23 @@ void gfccsd_main_driver(std::string filename) {
   
             sch.deallocate(q1_tmp_a,q2_tmp_aaa,q2_tmp_bab).execute();
   
+            { //retile q1 a,aaa,bab tensors
+              int q1_tamm_a_ga   = tamm_to_ga(ec,q1_tamm_a);
+              int q2_tamm_aaa_ga = tamm_to_ga(ec,q2_tamm_aaa);
+              int q2_tamm_bab_ga = tamm_to_ga(ec,q2_tamm_bab);
+              sch.deallocate(q1_tamm_a, q2_tamm_aaa, q2_tamm_bab).execute();
+
+              q1_tamm_a   = {o_alpha,otis_opt};
+              q2_tamm_aaa = {v_alpha,o_alpha,o_alpha,otis_opt};
+              q2_tamm_bab = {v_beta, o_alpha,o_beta, otis_opt};        
+              sch.allocate(q1_tamm_a, q2_tamm_aaa, q2_tamm_bab).execute();
+
+              ga_to_tamm(ec,q1_tamm_a,q1_tamm_a_ga);
+              ga_to_tamm(ec,q2_tamm_aaa,q2_tamm_aaa_ga);
+              ga_to_tamm(ec,q2_tamm_bab,q2_tamm_bab_ga);
+              NGA_Destroy(q1_tamm_a_ga); NGA_Destroy(q2_tamm_aaa_ga); NGA_Destroy(q2_tamm_bab_ga);    
+            }
+
             write_to_disk(q1_tamm_a,   q1_a_file);
             write_to_disk(q2_tamm_aaa, q2_aaa_file);
             write_to_disk(q2_tamm_bab, q2_bab_file);
@@ -1984,9 +2074,9 @@ void gfccsd_main_driver(std::string filename) {
           }
   
           if(rank == 0) {
-            cout << endl << "Time for orthogonalization: " << time_gs_orth << " secs" << endl;
-            cout << endl << "Time for normalizing and copying back: " << time_gs_norm << " secs" << endl;
-            cout << endl << "Total time for Gram-Schmidt: " << total_time_gs << " secs" << endl;
+            cout << endl << "Time for orthogonalization: " << std::fixed << std::setprecision(6) << time_gs_orth << " secs" << endl;
+            cout << endl << "Time for normalizing and copying back: " << std::fixed << std::setprecision(6) << time_gs_norm << " secs" << endl;
+            cout << endl << "Total time for Gram-Schmidt: " << std::fixed << std::setprecision(6) << total_time_gs << " secs" << endl;
           }
           auto cc_gs_x = std::chrono::high_resolution_clock::now();
   
@@ -2004,7 +2094,7 @@ void gfccsd_main_driver(std::string filename) {
                     q1_tamm_a, q2_tamm_aaa, q2_tamm_bab, 
                     d_f1, ix2_2_a, ix1_1_1_a, ix1_1_1_b,
                     ix2_6_3_aaaa, ix2_6_3_abab,
-                    otis,true);
+                    otis_opt,true);
   
             #if GF_IN_SG
               gfccsd_x2_a(sub_sch,
@@ -2024,7 +2114,7 @@ void gfccsd_main_driver(std::string filename) {
                     ix2_6_3_aaaa, ix2_6_3_abba, ix2_6_3_abab,
                     ix2_6_3_bbbb, ix2_6_3_baab,
                     v2ijab_aaaa, v2ijab_abab, v2ijab_bbbb,
-                    otis,true);
+                    otis_opt,true);
   
             #if GF_IN_SG
               #ifdef USE_TALSH
@@ -2059,27 +2149,26 @@ void gfccsd_main_driver(std::string filename) {
   
         auto cc_t1 = std::chrono::high_resolution_clock::now();
 
-        auto [otil,otil1,otil2] = otis.labels<3>("all");
-        ComplexTensor hsub_tamm_a{otis,otis};  
-        ComplexTensor bsub_tamm_a{otis,o_alpha};  
-        ComplexTensor Cp_a{o_alpha,otis};
+        auto [otil,otil1,otil2] = otis_opt.labels<3>("all");
+        ComplexTensor hsub_tamm_a{otis_opt,otis_opt};
+        ComplexTensor bsub_tamm_a{otis_opt,o_alpha};
+        ComplexTensor Cp_a{o_alpha,otis_opt};
         ComplexTensor::allocate(&ec,hsub_tamm_a,bsub_tamm_a,Cp_a);
 
-        if(!gf_restart){
-  
-          ComplexTensor p1_k_a{v_alpha,otis};
+        if(!gf_restart) {
+
+          ComplexTensor p1_k_a{v_alpha,otis_opt};
+
           ComplexTensor q1_conj_a   = tamm::conj(q1_tamm_a  );
           ComplexTensor q2_conj_aaa = tamm::conj(q2_tamm_aaa);
           ComplexTensor q2_conj_bab = tamm::conj(q2_tamm_bab);      
   
-          sch
+          sch.allocate(p1_k_a)
              (bsub_tamm_a(otil1,h1_oa)  =       q1_conj_a(h1_oa,otil1))
              (hsub_tamm_a(otil1,otil2)  =       q1_conj_a(h1_oa,otil1) * Hx1_tamm_a(h1_oa,otil2))
              (hsub_tamm_a(otil1,otil2) += 0.5 * q2_conj_aaa(p1_va,h1_oa,h2_oa,otil1) * Hx2_tamm_aaa(p1_va,h1_oa,h2_oa,otil2))
              (hsub_tamm_a(otil1,otil2) +=       q2_conj_bab(p1_vb,h1_oa,h2_ob,otil1) * Hx2_tamm_bab(p1_vb,h1_oa,h2_ob,otil2))
-             .deallocate(q1_conj_a,q2_conj_aaa,q2_conj_bab)
              
-             .allocate(p1_k_a)
              ( Cp_a(h1_oa,otil)    =        q1_tamm_a(h1_oa,otil)                                     )
              ( Cp_a(h2_oa,otil)   += -1.0 * lt12_o_a(h1_oa,h2_oa) * q1_tamm_a(h1_oa,otil)               )
              ( Cp_a(h2_oa,otil)   +=        d_t1_a(p1_va,h1_oa) * q2_tamm_aaa(p1_va,h2_oa,h1_oa,otil) )
@@ -2087,7 +2176,8 @@ void gfccsd_main_driver(std::string filename) {
              ( p1_k_a(p1_va,otil)  =        d_t2_aaaa(p1_va,p2_va,h1_oa,h2_oa) * q2_tamm_aaa(p2_va,h1_oa,h2_oa,otil) )
              ( p1_k_a(p1_va,otil) +=  2.0 * d_t2_abab(p1_va,p2_vb,h1_oa,h2_ob) * q2_tamm_bab(p2_vb,h1_oa,h2_ob,otil) )
              ( Cp_a(h1_oa,otil)   += -0.5 * p1_k_a(p1_va,otil) * d_t1_a(p1_va,h1_oa) )
-             .deallocate(p1_k_a,q1_tamm_a, q2_tamm_aaa, q2_tamm_bab);
+             .deallocate(q1_conj_a,q2_conj_aaa,q2_conj_bab)
+             .deallocate(p1_k_a,q1_tamm_a, q2_tamm_aaa, q2_tamm_bab,Hx1_tamm_a,Hx2_tamm_aaa,Hx2_tamm_bab);
 
               #ifdef USE_TALSH
                 sch.execute(ExecutionHW::GPU);
@@ -2106,7 +2196,6 @@ void gfccsd_main_driver(std::string filename) {
           write_to_disk(hsub_tamm_a, hsub_a_file);
           write_to_disk(bsub_tamm_a, bsub_a_file);
           write_to_disk(Cp_a,        cp_a_file);
-          sch.deallocate(Hx1_tamm_a,Hx2_tamm_aaa,Hx2_tamm_bab).execute();
         }
         else {
           read_from_disk(hsub_tamm_a, hsub_a_file);
@@ -2121,9 +2210,9 @@ void gfccsd_main_driver(std::string filename) {
         tamm_to_eigen_tensor(bsub_tamm_a,bsub_a);
         Complex2DMatrix hident = Complex2DMatrix::Identity(hsub_a.rows(),hsub_a.cols());
   
-        ComplexTensor xsub_local_a{otis,o_alpha};
+        ComplexTensor xsub_local_a{otis_opt,o_alpha};
         ComplexTensor o_local_a{o_alpha};
-        ComplexTensor Cp_local_a{o_alpha,otis};
+        ComplexTensor Cp_local_a{o_alpha,otis_opt};
   
         ComplexTensor::allocate(&ec_l,xsub_local_a,o_local_a,Cp_local_a);
   
@@ -2166,7 +2255,8 @@ void gfccsd_main_driver(std::string filename) {
           }
           if(rank==0){
           std::ostringstream spf;
-          spf << "W = " << std::setprecision(12) << std::real(omega_tmp) << ", omega_ip_A0 =  " << omega_ip_A0[ni] << endl;
+          spf << "W = " << std::fixed << std::setprecision(2) << std::real(omega_tmp) << 
+                 ", omega_ip_A0 = " << std::fixed << std::setprecision(4) << omega_ip_A0[ni] << endl;
           cout << spf.str();
           ni_A[ni] = omega_ip_A0[ni];
           ni_w[ni] = std::real(omega_tmp);
@@ -2176,7 +2266,7 @@ void gfccsd_main_driver(std::string filename) {
         cc_t2 = std::chrono::high_resolution_clock::now();
         time  = std::chrono::duration_cast<std::chrono::duration<double>>((cc_t2 - cc_t1)).count();
         if(rank == 0) {
-          cout << endl << "omegas processed in level " << level << " = " << omega_extra << endl;
+          cout << endl << "omegas processed in level " << level << " = " << std::fixed << std::setprecision(2) << omega_extra << endl;
           cout << "Time to compute spectral function in level " << level << " (omega_npts_ip = " << omega_npts_ip << "): " 
                     << time << " secs" << endl;
           write_results_to_json(ec,sys_data,level,ni_w,ni_A,"retarded_alpha");
@@ -2186,8 +2276,47 @@ void gfccsd_main_driver(std::string filename) {
         std::ostringstream spfe;
         spfe << "";
   
+        if(level==1){
+          auto o1 = (omega_extra[0] + omega_extra[1] ) / 2;
+          omega_extra.clear();
+          o1 = find_closest(o1,omega_space_ip);
+          omega_extra.push_back(o1);
+        }
+        else{
+          std::sort(omega_extra_finished.begin(),omega_extra_finished.end());
+          omega_extra.clear();
+          std::vector<T> wtemp;
+          for (size_t i=1;i<omega_extra_finished.size();i++){
+            bool oe_add = false;
+            auto w1 = omega_extra_finished[i-1];
+            auto w2 = omega_extra_finished[i];
+            size_t num_w = (w2-w1)/omega_delta + 1;
+            for(size_t j=0;j<num_w;j++){
+              T otmp = w1 + j*omega_delta;
+              size_t ind = (otmp - omega_min_ip)/omega_delta;
+              if (!omega_ip_conv_a[ind]) { oe_add = true; break; }
+            }
+            if(oe_add){
+              T Win = (w1+w2)/2;
+              Win = find_closest(Win,omega_space_ip);
+              if (std::find(omega_extra_finished.begin(),omega_extra_finished.end(),Win) != omega_extra_finished.end()){
+                continue;
+              }
+              else { 
+                omega_extra.push_back(Win);
+              }
+            } //end oe add
+          } //end oe finished
+        }
+        if(rank==0){
+          cout << "new freq's:" << std::fixed << std::setprecision(2) << omega_extra << endl;
+        }
+        level++;
+
         // extrapolate or proceed to next level
-        if(std::all_of(omega_ip_conv_a.begin(),omega_ip_conv_a.end(), [](bool x){return x;}) || gf_extrapolate_level == level) {
+        bool conv_all = std::all_of(omega_ip_conv_a.begin(),omega_ip_conv_a.end(), [](bool x){return x;});
+
+        if(conv_all || gf_extrapolate_level == level || omega_extra.size() == 0) {
           if(rank==0) cout << endl << "--------------------extrapolate & converge-----------------------" << endl;
           auto cc_t1 = std::chrono::high_resolution_clock::now();
   
@@ -2216,7 +2345,8 @@ void gfccsd_main_driver(std::string filename) {
                 spfe << "orb_index = " << nj << ", gpp_a = " << gpp << endl;
               }
   
-              spfe << "w = " << std::setprecision(12) << std::real(omega_tmp) << ", A_a =  " << oscalar << endl;              
+              spfe << "w = " << std::fixed << std::setprecision(3) << std::real(omega_tmp) << 
+                      ", A_a =  " << std::fixed << std::setprecision(6) << oscalar << endl;              
               next = ac->fetch_add(0, 1); 
             }
             taskcount++;
@@ -2231,59 +2361,14 @@ void gfccsd_main_driver(std::string filename) {
             sys_data.results["output"]["GFCCSD"]["retarded_alpha"]["nlevels"] = level;
             write_json_data(sys_data,"GFCCSD");
           }
-
           sch.deallocate(xsub_local_a,o_local_a,Cp_local_a,
-                     hsub_tamm_a,bsub_tamm_a,Cp_a).execute();  
-  
+                     hsub_tamm_a,bsub_tamm_a,Cp_a).execute();
           auto cc_t2 = std::chrono::high_resolution_clock::now();
           double time =
             std::chrono::duration_cast<std::chrono::duration<double>>((cc_t2 - cc_t1)).count();
           if(rank == 0) std::cout << endl << 
-          "Time taken for extrapolation (lomega_npts_ip = " << lomega_npts_ip << "): " << time << " secs" << endl;
-            
+          "Time taken for extrapolation (lomega_npts_ip = " << lomega_npts_ip << "): " << time << " secs" << endl;   
           break;
-        }
-        else {
-          if(level==1){
-            auto o1 = (omega_extra[0] + omega_extra[1] ) / 2;
-            omega_extra.clear();
-            o1 = find_closest(o1,omega_space_ip);
-            omega_extra.push_back(o1);
-          }
-          else{
-            std::sort(omega_extra_finished.begin(),omega_extra_finished.end());
-            omega_extra.clear();
-            std::vector<T> wtemp;
-            for (size_t i=1;i<omega_extra_finished.size();i++){
-              bool oe_add = false;
-              auto w1 = omega_extra_finished[i-1];
-              auto w2 = omega_extra_finished[i];
-              size_t num_w = (w2-w1)/omega_delta + 1;
-              for(size_t j=0;j<num_w;j++){
-                T otmp = w1 + j*omega_delta;
-                size_t ind = (otmp - omega_min_ip)/omega_delta;
-                if (!omega_ip_conv_a[ind]) { oe_add = true; break; }
-              }
-  
-              if(oe_add){
-                T Win = (w1+w2)/2;
-                
-                Win = find_closest(Win,omega_space_ip);
-                if (std::find(omega_extra_finished.begin(),omega_extra_finished.end(),Win) != omega_extra_finished.end()){
-                  if(rank==0){
-                    cout << "WIN = " << Win << endl;
-                    cout << "Omega-combined = ";
-                    cout << omega_extra_finished << endl;
-                  }
-                  //TODO: deallocate all tensors
-                  tamm_terminate("GFCCSD-MOR: Need higher resolution or different frequency region!");
-                }
-                omega_extra.push_back(Win);
-  
-              } //end oe add
-            } //end oe finished
-          }
-          level++;
         }
   
         sch.deallocate(xsub_local_a,o_local_a,Cp_local_a,
