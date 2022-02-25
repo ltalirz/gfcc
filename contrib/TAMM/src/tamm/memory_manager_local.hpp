@@ -1,5 +1,4 @@
-#ifndef TAMM_MEMORY_MANAGER_LOCAL_H_
-#define TAMM_MEMORY_MANAGER_LOCAL_H_
+#pragma once
 
 #include <iosfwd>
 
@@ -81,7 +80,8 @@ class MemoryManagerLocal : public MemoryManager {
   }
 
   MemoryRegion* alloc_coll_balanced(ElementType eltype,
-                                    Size nelements) override {
+                                    Size nelements,
+                                    ProcList proc_list = {}) override {
     return alloc_coll(eltype, nelements);
   }
 
@@ -288,5 +288,3 @@ private:
 }; // class MemoryManagerLocal
 
 }  // namespace tamm
-
-#endif // TAMM_MEMORY_MANAGER_LOCAL_H_

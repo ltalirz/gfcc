@@ -1,5 +1,4 @@
-#ifndef TAMM_OPMIN_HPP_
-#define TAMM_OPMIN_HPP_
+#pragma once
 
 #include <algorithm>
 #include <cassert>
@@ -533,7 +532,7 @@ class Optimizer {
             opt.compute_cost_[x | y]) {
           // std::cout << "Op cost for " << std::bitset<16>{x | y} << " : "
           //           << (double)this_compute_cost << "\n";
-          opt.compute_cost_[x | y] = this_compute_cost;
+          opt.compute_cost_[x | y] = this_compute_cost + opt.compute_cost_[x] + opt.compute_cost_[y];
           opt.children_[x | y].child1 = x;
           opt.children_[x | y].child2 = y;
         }
@@ -820,5 +819,3 @@ protected:
 //   return 0;
 // }
 
-
-#endif // TAMM_OPMIN_HPP_

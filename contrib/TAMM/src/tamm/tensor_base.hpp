@@ -1,5 +1,4 @@
-#ifndef TAMM_TENSOR_BASE_HPP_
-#define TAMM_TENSOR_BASE_HPP_
+#pragma once
 
 #include "tamm/errors.hpp"
 // #include "tamm/execution_context.hpp"
@@ -66,7 +65,8 @@ public:
         dense,
         lambda,
         normal,
-        view
+        view,
+        unit_view
     };
 
     // Ctors
@@ -329,6 +329,9 @@ public:
         return (upper_total == lower_total);
     }
 
+    SpinMask spin_mask() const {
+      return spin_mask_;
+    }
 
     void add_update(const TensorUpdate& new_update) ;// {
     //   updates_.push_back(new_update);
@@ -437,5 +440,3 @@ inline bool operator<(const TensorBase& lhs, const TensorBase& rhs) {
 }
 
 } // namespace tamm
-
-#endif // TAMM_TENSOR_BASE_HPP_

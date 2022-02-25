@@ -1,5 +1,4 @@
-#ifndef TAMM_LABELED_TENSOR_HPP_
-#define TAMM_LABELED_TENSOR_HPP_
+#pragma once
 
 // #include "tamm/ops.hpp"
 #include "tamm/tensor.hpp"
@@ -22,6 +21,7 @@ public:
       has_str_lbl_{false} {
         unpack(0, args...);
         validate();
+        if(tensor_.has_spin()) { propagate_spin_info(); }
     }
 
     LabeledTensor(const Tensor<T>& tensor, const IndexLabelVec& labels) :
@@ -32,6 +32,7 @@ public:
       has_str_lbl_{false} {
         unpack(0, labels);
         validate();
+        if(tensor_.has_spin()) { propagate_spin_info(); }
     }
 
     Tensor<T> tensor() const { return tensor_; }
@@ -80,6 +81,17 @@ public:
     bool has_str_lbl() const {
         return has_str_lbl_;
     }
+
+    void propagate_spin_info() {
+      EXPECTS(tensor_.has_spin());
+      auto spin_mask = tensor_.spin_mask();
+      EXPECTS(spin_mask.size() == ilv_.size());
+
+      for (size_t i = 0; i < ilv_.size(); i++) {
+        ilv_[i].set_spin_pos(spin_mask[i]);
+      }
+    }
+
 
     void set(const std::unique_ptr<new_ops::Op>& op);
 
@@ -297,4 +309,3 @@ inline std::tuple<LabeledTensor<T1>, LabeledTensor<T2>> operator*(
 }
 
 } // namespace tamm
-#endif // LABELED_TENSOR_HPP_

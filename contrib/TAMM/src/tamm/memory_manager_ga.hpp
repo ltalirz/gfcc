@@ -1,5 +1,4 @@
-#ifndef TAMM_MEMORY_MANAGER_GA_H_
-#define TAMM_MEMORY_MANAGER_GA_H_
+#pragma once
 
 #include "tamm/memory_manager.hpp"
 #include "armci.h"
@@ -156,7 +155,8 @@ class MemoryManagerGA : public MemoryManager {
   }
 
   MemoryRegion* alloc_coll_balanced(ElementType eltype,
-                                    Size max_nelements) override {
+                                    Size max_nelements,
+                                    ProcList proc_list = {}) override {
 
     MemoryRegionGA* pmr = nullptr;
      {
@@ -177,6 +177,13 @@ class MemoryManagerGA : public MemoryManager {
     NGA_Set_data64(pmr->ga_, 1, &dim, ga_eltype);
     GA_Set_chunk64(pmr->ga_, &chunk);
     GA_Set_pgroup(pmr->ga_, pg().ga_pg());
+
+    if (proc_list.size() > 0 ) {
+      int nproc = proc_list.size();
+      int proclist_c[nproc]; 
+      std::copy(proc_list.begin(), proc_list.end(), proclist_c);
+      GA_Set_restricted(pmr->ga_, proclist_c, nproc);
+    }
 
         {
     TimerGuard tg_total{&memTime9};
@@ -384,5 +391,3 @@ class MemoryManagerGA : public MemoryManager {
 };  // class MemoryManagerGA
 
 }  // namespace tamm
-
-#endif // TAMM_MEMORY_MANAGER_GA_H_

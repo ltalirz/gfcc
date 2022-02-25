@@ -1,5 +1,4 @@
-#ifndef CCSD_T_ALL_FUSED_CPU_HPP_
-#define CCSD_T_ALL_FUSED_CPU_HPP_
+#pragma once
 
 #include "fused_common.hpp"
 
@@ -54,6 +53,8 @@ void total_fused_ccsd_t_cpu(bool is_restricted, const Index noab, const Index nv
                             T* df_host_pinned_d1_t2, T* df_host_pinned_d1_v2,
                             T* df_host_pinned_d2_t2, T* df_host_pinned_d2_v2,
                             T* host_energies,
+                            // for new fully-fused kernel
+                            int* host_d1_size_h7b, int* host_d2_size_p7b,
                             //
                             int* df_simple_s1_size, int* df_simple_d1_size, int* df_simple_d2_size,
                             int* df_simple_s1_exec, int* df_simple_d1_exec, int* df_simple_d2_exec,
@@ -124,6 +125,7 @@ void total_fused_ccsd_t_cpu(bool is_restricted, const Index noab, const Index nv
                     //
                     size_T_d1_t2,         size_T_d1_v2,
                     df_host_pinned_d1_t2, df_host_pinned_d1_v2,
+                    host_d1_size_h7b,
                     df_simple_d1_size,    df_simple_d1_exec,
                     &df_num_d1_enabled,
                     //
@@ -138,6 +140,7 @@ void total_fused_ccsd_t_cpu(bool is_restricted, const Index noab, const Index nv
                     //
                     size_T_d2_t2,           size_T_d2_v2,
                     df_host_pinned_d2_t2,   df_host_pinned_d2_v2,
+                    host_d2_size_p7b,
                     df_simple_d2_size,      df_simple_d2_exec,
                     &df_num_d2_enabled,
                     //
@@ -563,4 +566,3 @@ void total_fused_ccsd_t_cpu(bool is_restricted, const Index noab, const Index nv
     // printf ("========================================================================================\n");
 }
 
-#endif //CCSD_T_ALL_FUSED_CPU_HPP_

@@ -1,7 +1,6 @@
 // Copyright 2016 Pacific Northwest National Laboratory
 
-#ifndef TAMM_TYPES_HPP_
-#define TAMM_TYPES_HPP_
+#pragma once
 
 #include "tamm/boundvec.hpp"
 #include "tamm/errors.hpp"
@@ -88,6 +87,7 @@ using IntLabelVec = std::vector<IntLabel>;
 
 using SizeVec = std::vector<Size>;
 using ProcGrid = std::vector<Proc>;
+using ProcList = std::vector<int>;
 
 enum class AllocationStatus { invalid, created, attached, deallocated, orphaned };
 
@@ -104,7 +104,8 @@ enum class DistributionKind {
   nw,
   dense,
   simple_round_robin,
-  view
+  view,
+  unit_tile
 };
 
 enum class MemoryManagerKind {
@@ -398,4 +399,3 @@ using TranslateFunc = std::function<Index(Index id)>;
 
 } // namespace tamm
 
-#endif // TAMM_TYPES_HPP_

@@ -1,5 +1,4 @@
-#ifndef TAMM_MEMORY_MANAGER_H_
-#define TAMM_MEMORY_MANAGER_H_
+#pragma once
 
 #include <iosfwd>
 
@@ -87,7 +86,8 @@ class MemoryManager {
    * @return Allocated memory region
    */
   virtual MemoryRegion* alloc_coll_balanced(ElementType eltype,
-                                            Size max_nelements) = 0;
+                                            Size max_nelements,
+                                            ProcList proc_list = {}) = 0;
 
   /**
    * @brief Attach a memory region to the process group.
@@ -487,6 +487,9 @@ class MemoryRegion {
 
   template <typename T>
   friend class TensorImpl;
+
+  template <typename T>
+  friend class TensorImplUnitTile;
 }; // class MemoryRegion
 
 /**
@@ -552,5 +555,3 @@ class MemoryRegionImpl : public MemoryRegion {
 
 #include "tamm/memory_manager_local.hpp"
 #include "tamm/memory_manager_ga.hpp"
-
-#endif // TAMM_MEMORY_MANAGER_H_

@@ -1,5 +1,4 @@
-#ifndef TAMM_EXECUTION_CONTEXT_H_
-#define TAMM_EXECUTION_CONTEXT_H_
+#pragma once
 
 #include "tamm/proc_group.hpp"
 //#include "tamm/tensor_impl.hpp"
@@ -322,10 +321,14 @@ public:
 
     bool has_gpu() const { return has_gpu_; }
 
+    ExecutionHW exhw() const { return exhw_; }
+
     int num_nodes() const { return nnodes_; }
     int ppn() const { return ranks_pn_; }
 
     int gpu_devid() const { return dev_id_; }
+
+    bool print() const { return (pg_.rank() == 0); }
 
     std::stringstream& get_profile_data() { return profile_data_; }
 
@@ -391,6 +394,7 @@ private:
     int ranks_pn_;
     bool has_gpu_;
     int dev_id_=-1;
+    ExecutionHW exhw_;
 #if defined(USE_DPCPP)
     std::vector<sycl::queue*> vec_syclQue;
 #endif
@@ -403,4 +407,3 @@ private:
 
 } // namespace tamm
 
-#endif // TAMM_EXECUTION_CONTEXT_H_

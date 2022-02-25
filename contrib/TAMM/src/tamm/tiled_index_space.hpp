@@ -1,5 +1,4 @@
-#ifndef TAMM_TILED_INDEX_SPACE_HPP_
-#define TAMM_TILED_INDEX_SPACE_HPP_
+#pragma once
 
 #include "tamm/index_space.hpp"
 #include "tamm/symbol.hpp"
@@ -1934,6 +1933,15 @@ public:
         return tiled_index_space().is_dependent();
     }
 
+    void set_spin_pos(SpinPosition spin_pos) {
+      spin_pos_ = spin_pos;
+      has_spin_ = true;
+    }
+
+    SpinPosition spin_pos() const {
+      return spin_pos_;
+    }
+
     // Comparison operators
     friend bool operator==(const TiledIndexLabel& lhs,
                            const TiledIndexLabel& rhs);
@@ -1954,7 +1962,8 @@ protected:
     TileLabelElement primary_label_;
     std::vector<TileLabelElement> secondary_labels_;
     // std::vector<TiledIndexLabel> dep_labels_;
-
+    bool has_spin_ = false;
+    SpinPosition spin_pos_ = SpinPosition::ignore;
     /**
      * @brief Validates a TiledIndexLabel object with regard to its reference
      * TiledIndexSpace and dependent labels
@@ -2060,5 +2069,3 @@ auto TiledIndexSpace::labels_impl(std::string id, Label start,
 }
 
 } // namespace tamm
-
-#endif // TAMM_TILED_INDEX_SPACE_HPP_

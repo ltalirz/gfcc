@@ -1,5 +1,4 @@
-#ifndef TAMM_TENSOR_VARIANT_HPP_
-#define TAMM_TENSOR_VARIANT_HPP_
+#pragma once
 
 #include "tamm/scalar.hpp"
 #include "tamm/scheduler.hpp"
@@ -18,21 +17,26 @@ public:
 
     TensorVariant(TensorType value) : value_{value} {}
 
-    TensorVariant(ElType eltype, const IndexLabelVec& ilv) {
-        switch(eltype) {
-            case ElType::inv: value_ = Tensor<double>{ilv}; break;
-            // case ElType::i32: value_ = Tensor<int>{ilv}; break;
-            // case ElType::i64: value_ = Tensor<int64_t>{ilv}; break;
-            // case ElType::fp32: value_ = Tensor<float>{ilv}; break;
-            case ElType::fp64: value_ = Tensor<double>{ilv}; break;
-            // case ElType::cfp32:
-            //     value_ = Tensor<std::complex<float>>{ilv};
-            //     break;
-            // case ElType::cfp64:
-            //     value_ = Tensor<std::complex<double>>{ilv};
-            //     break;
-        }
+    TensorVariant(ElType eltype, const IndexLabelVec& ilv) { init_tensor(eltype, ilv); }
+
+    void init_tensor(ElType eltype, const IndexLabelVec& ilv) {
+      switch(eltype) {
+        case ElType::inv: value_ = Tensor<double>{ilv}; break;
+        // case ElType::i32: value_ = Tensor<int>{ilv}; break;
+        // case ElType::i64: value_ = Tensor<int64_t>{ilv}; break;
+        // case ElType::fp32: value_ = Tensor<float>{ilv}; break;
+        case ElType::fp64:
+          value_ = Tensor<double>{ilv};
+          break;
+          // case ElType::cfp32:
+          //     value_ = Tensor<std::complex<float>>{ilv};
+          //     break;
+          // case ElType::cfp64:
+          //     value_ = Tensor<std::complex<double>>{ilv};
+          //     break;
+      }
     }
+
 
     TensorVariant(const TensorVariant&)  = default;
     TensorVariant(TensorVariant&& other) = default;
@@ -133,6 +137,13 @@ public:
           value_);
     }
 
+    bool has_spin(const IndexLabelVec& ilv) const {
+      for(const auto& label: ilv) {
+        if(label.tiled_index_space().has_spin()) { return true; }
+      }
+      return false;
+    }
+
     void* get_symbol_ptr() const {
       return std::visit(
           overloaded{[&](const auto& tensor) { return tensor.get_symbol_ptr(); }},
@@ -143,5 +154,3 @@ private : TensorType value_;
 };
 
 } // namespace tamm
-
-#endif // TAMM_TENSOR_VARIANT_HPP_

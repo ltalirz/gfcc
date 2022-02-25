@@ -1,5 +1,4 @@
-#ifndef CCSD_T_COMMON_HPP_
-#define CCSD_T_COMMON_HPP_
+#pragma once
 
 #ifdef USE_CUDA
 #include <cuda.h>
@@ -78,4 +77,10 @@ void freeGpuMem(void *p);
 #endif
 void finalizeMemModule();
 
-#endif /*CCSD_T_COMMON_HPP_*/
+
+struct hostEnergyReduceData_t {
+  double *result_energy;
+  double *host_energies;
+  size_t num_blocks;
+  double factor;
+};
