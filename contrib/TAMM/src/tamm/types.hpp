@@ -1,14 +1,15 @@
 // Copyright 2016 Pacific Northwest National Laboratory
 
-#ifndef TAMM_TYPES_HPP_
-#define TAMM_TYPES_HPP_
+#pragma once
 
 #include "tamm/boundvec.hpp"
 #include "tamm/errors.hpp"
 #include "tamm/strong_num.hpp"
 #include <complex>
 #include <iosfwd>
-#include "ga.h"
+#include <map>
+#include "ga/ga.h"
+#include "ga/ga-mpi.h"
 
 //#include <mpi.h>
  
@@ -86,6 +87,7 @@ using IntLabelVec = std::vector<IntLabel>;
 
 using SizeVec = std::vector<Size>;
 using ProcGrid = std::vector<Proc>;
+using ProcList = std::vector<int>;
 
 enum class AllocationStatus { invalid, created, attached, deallocated, orphaned };
 
@@ -101,7 +103,9 @@ enum class DistributionKind {
   invalid,
   nw,
   dense,
-  simple_round_robin
+  simple_round_robin,
+  view,
+  unit_tile
 };
 
 enum class MemoryManagerKind {
@@ -174,6 +178,8 @@ enum class SpinType { ao_spin, mo_spin };
 
 enum class ExecutionHW { CPU, GPU, DEFAULT };
 
+enum class ReduceOp { min, max, sum, maxloc, minloc };
+
 using SpinMask = std::vector<SpinPosition>;
 
 using rtDataHandlePtr = ga_nbhdl_t*;
@@ -217,6 +223,43 @@ using DataCommunicationHandlePtr = DataCommunicationHandle*;
 // const Spin alpha{1};
 // const Spin beta{2};
 // }; // namespace SpinType
+
+template<typename T>
+static inline MPI_Datatype mpi_type(){
+    using std::is_same_v;
+
+    if constexpr(is_same_v<int, T>)
+        return MPI_INT;    
+    else if constexpr(is_same_v<char, T>)
+        return MPI_CHAR;
+    else if constexpr(is_same_v<int64_t, T>)
+        return MPI_INT64_T;
+    else if constexpr(is_same_v<uint32_t, T>)
+        return MPI_UNSIGNED;        
+    else if constexpr(is_same_v<size_t, T>)
+        return MPI_UNSIGNED_LONG;        
+    else if constexpr(is_same_v<float, T>)
+        return MPI_FLOAT;
+    else if constexpr(is_same_v<double, T>)
+        return MPI_DOUBLE;
+    else if constexpr(is_same_v<std::complex<float>, T>)
+        return MPI_COMPLEX;
+    else if constexpr(is_same_v<std::complex<double>, T>)
+        return MPI_DOUBLE_COMPLEX;
+}
+
+static inline MPI_Op mpi_op(ReduceOp rop) {
+    if (rop == ReduceOp::min)
+        return MPI_MIN;
+    else if (rop == ReduceOp::max)
+        return MPI_MAX;
+    else if (rop == ReduceOp::sum)
+        return MPI_SUM;
+    else if (rop == ReduceOp::minloc)
+        return MPI_MINLOC;
+    else if (rop == ReduceOp::maxloc)
+        return MPI_MAXLOC;
+}
 
 namespace internal {
     template<typename T, typename... Args>
@@ -281,6 +324,78 @@ inline Label make_label() { static Label lbl = 0; return lbl++; }
     return ret;
   }
 
+  inline constexpr const char* element_type_to_string(ElementType eltype) {
+      switch(eltype) {
+          case ElementType::invalid: return "inv"; break;
+          // case ElType::i32: return "i32"; break;
+          // case ElType::i64: return "i64"; break;
+          case ElementType::single_precision: return "f32"; break;
+          case ElementType::double_precision: return "f64"; break;
+          case ElementType::single_complex: return "cf32"; break;
+          case ElementType::double_complex: return "cf64"; break;
+      }
+      return "NaN";
+  }
+
+  enum class ElType {
+    inv   = 0b1000,
+    i32   = 0b0000,
+    i64   = 0b0001,
+    fp32  = 0b0010,
+    fp64  = 0b0011,
+    cfp32 = 0b0110,
+    cfp64 = 0b0111
+};
+
+template<typename T>
+inline constexpr ElType eltype = ElType::inv;
+
+template<>
+inline constexpr ElType eltype<int32_t> = ElType::i32;
+
+template<>
+inline constexpr ElType eltype<int64_t> = ElType::i64;
+
+template<>
+inline constexpr ElType eltype<float> = ElType::fp32;
+
+template<>
+inline constexpr ElType eltype<double> = ElType::fp64;
+
+template<>
+inline constexpr ElType eltype<std::complex<float>> = ElType::cfp32;
+
+template<>
+inline constexpr ElType eltype<std::complex<double>> = ElType::cfp64;
+
+inline constexpr const char* eltype_to_string(ElType eltype) {
+    switch(eltype) {
+        case ElType::inv: return "inv"; break;
+        case ElType::i32: return "i32"; break;
+        case ElType::i64: return "i64"; break;
+        case ElType::fp32: return "f32"; break;
+        case ElType::fp64: return "f64"; break;
+        case ElType::cfp32: return "cf32"; break;
+        case ElType::cfp64: return "cf64"; break;
+    }
+    return "NaN";
+}
+
+inline constexpr ElType lub(ElType first, ElType second) {
+    return ElType(static_cast<int>(first) | static_cast<int>(second));
+}
+
+
+template <class... Ts>
+struct overloaded : Ts... {
+  using Ts::operator()...;
+};
+template <class... Ts>
+overloaded(Ts...)->overloaded<Ts...>;
+
+using SymbolTable = std::map<void*, std::string>;
+
+using TranslateFunc = std::function<Index(Index id)>;
+
 } // namespace tamm
 
-#endif // TAMM_TYPES_HPP_

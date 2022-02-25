@@ -1,13 +1,13 @@
-#ifndef TAMM_SCHEDULER_HPP_
-#define TAMM_SCHEDULER_HPP_
+#pragma once
 
 #include <set>
 
-#include "ga-mpi.h"
+#include "ga/ga-mpi.h"
 #include "tamm/dag_impl.hpp"
 #include "tamm/execution_context.hpp"
 #include "tamm/ops.hpp"
 #include "tamm/tensor.hpp"
+#include "tamm/ip_hptt.hpp"
 
 namespace tamm {
 
@@ -41,7 +41,7 @@ public:
     Scheduler& operator()(const OpType& op, std::string opstr="", ExecutionHW exhw = ExecutionHW::DEFAULT) {
         OpList t_ops = op.canonicalize();
 
-        for(auto& op : t_ops) { op->opstr_ = opstr; op->exhw_ = exhw, ops_.push_back(op); }
+        for(auto& op : t_ops) { op->opstr_ = opstr; op->exhw_ = exhw; ops_.push_back(op); }
         return (*this);
     }
 
@@ -222,7 +222,6 @@ public:
         tbarrierTime += std::chrono::duration_cast<std::chrono::duration<double>>((bt2 - bt1)).count(); 
         start_idx_ = ops_.size();
 #elif 1
-       // MPI_Barrier(ec_.pg().comm());
         auto misc_start = std::chrono::high_resolution_clock::now();
         auto order = levelize_and_order(ops_, start_idx_, ops_.size());
         EXPECTS(order.size() == ops_.size() - start_idx_);
@@ -319,38 +318,23 @@ public:
             std::vector<double> global_multop_dgemm_times_sum(nops);
             std::vector<double> global_multop_add_times_sum(nops);
 
-            // MPI_Reduce(load_imbalance_times.data(), global_load_imbalance_times_min.data(), lvl, MPI_DOUBLE, MPI_MIN, 0,
-                        // ec_.pg().comm());     
-            MPI_Reduce(op_times.data(), global_op_times_min.data(), nops, MPI_DOUBLE, MPI_MIN, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_get_times.data(), global_multop_get_times_min.data(), nops, MPI_DOUBLE, MPI_MIN, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_dgemm_times.data(), global_multop_dgemm_times_min.data(), nops, MPI_DOUBLE, MPI_MIN, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_add_times.data(), global_multop_add_times_min.data(), nops, MPI_DOUBLE, MPI_MIN, 0,
-                        ec_.pg().comm());     
+            // ec_.pg().reduce(load_imbalance_times.data(), global_load_imbalance_times_min.data(), lvl, ReduceOp::min, 0);
+            ec_.pg().reduce(op_times.data(), global_op_times_min.data(), nops, ReduceOp::min, 0);
+            ec_.pg().reduce(multop_get_times.data(), global_multop_get_times_min.data(), nops, ReduceOp::min, 0);
+            ec_.pg().reduce(multop_dgemm_times.data(), global_multop_dgemm_times_min.data(), nops, ReduceOp::min, 0);
+            ec_.pg().reduce(multop_add_times.data(), global_multop_add_times_min.data(), nops, ReduceOp::min, 0);
 
-            // MPI_Reduce(load_imbalance_times.data(), global_load_imbalance_times_max.data(), lvl, MPI_DOUBLE, MPI_MAX, 0,
-            //             ec_.pg().comm());     
-            MPI_Reduce(op_times.data(), global_op_times_max.data(), nops, MPI_DOUBLE, MPI_MAX, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_get_times.data(), global_multop_get_times_max.data(), nops, MPI_DOUBLE, MPI_MAX, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_dgemm_times.data(), global_multop_dgemm_times_max.data(), nops, MPI_DOUBLE, MPI_MAX, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_add_times.data(), global_multop_add_times_max.data(), nops, MPI_DOUBLE, MPI_MAX, 0,
-                        ec_.pg().comm());     
+            // ec_.pg().reduce(load_imbalance_times.data(), global_load_imbalance_times_max.data(), lvl, ReduceOp::max, 0);     
+            ec_.pg().reduce(op_times.data(), global_op_times_max.data(), nops, ReduceOp::max, 0);
+            ec_.pg().reduce(multop_get_times.data(), global_multop_get_times_max.data(), nops, ReduceOp::max, 0);
+            ec_.pg().reduce(multop_dgemm_times.data(), global_multop_dgemm_times_max.data(), nops, ReduceOp::max, 0);
+            ec_.pg().reduce(multop_add_times.data(), global_multop_add_times_max.data(), nops, ReduceOp::max, 0);
 
-            // MPI_Reduce(load_imbalance_times.data(), global_load_imbalance_times_sum.data(), lvl, MPI_DOUBLE, MPI_SUM, 0,
-            //             ec_.pg().comm());     
-            MPI_Reduce(op_times.data(), global_op_times_sum.data(), nops, MPI_DOUBLE, MPI_SUM, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_get_times.data(), global_multop_get_times_sum.data(), nops, MPI_DOUBLE, MPI_SUM, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_dgemm_times.data(), global_multop_dgemm_times_sum.data(), nops, MPI_DOUBLE, MPI_SUM, 0,
-                        ec_.pg().comm());     
-            MPI_Reduce(multop_add_times.data(), global_multop_add_times_sum.data(), nops, MPI_DOUBLE, MPI_SUM, 0,
-                        ec_.pg().comm());     
+            // ec_.pg().reduce(load_imbalance_times.data(), global_load_imbalance_times_sum.data(), lvl, ReduceOp::sum, 0);
+            ec_.pg().reduce(op_times.data(), global_op_times_sum.data(), nops, ReduceOp::sum, 0);
+            ec_.pg().reduce(multop_get_times.data(), global_multop_get_times_sum.data(), nops, ReduceOp::sum, 0);
+            ec_.pg().reduce(multop_dgemm_times.data(), global_multop_dgemm_times_sum.data(), nops, ReduceOp::sum, 0);
+            ec_.pg().reduce(multop_add_times.data(), global_multop_add_times_sum.data(), nops, ReduceOp::sum, 0);
 
         
             int np = ec_.pg().size().value();
@@ -476,30 +460,53 @@ public:
     }
 
 
-template<typename TensorType>
-inline void exact_copy(Tensor<TensorType>& dst, const Tensor<TensorType>& src,
-                       bool is_assign = false, TensorType scale = TensorType{1},
-                       const IndexVector& perm = {}) {
-    auto lambda = [&](const IndexVector& itval) {
-        IndexVector src_id = itval;
-        for(size_t i = 0; i < perm.size(); i++) { src_id[i] = itval[perm[i]]; }
-        size_t size = dst.block_size(itval);
-        std::vector<TensorType> buf(size);
-        src.get(src_id, buf);
-        TensorType {1};
-        if(scale != TensorType{1}) {
-            for(size_t i = 0; i < size; i++) { 
-                buf[i] *= scale; 
-            }
-        }
-        if(is_assign)
-            dst.put(itval, buf);
-        else
-            dst.add(itval, buf);
-    };
-    auto ec = dst.execution_context();
-    block_for(*ec, dst(), lambda);
-}
+// template<typename TensorType>
+// inline void exact_copy(Tensor<TensorType>& dst, const Tensor<TensorType>& src,
+//                        bool is_assign = false, TensorType scale = TensorType{1},
+//                        const IndexVector& perm = {}) {
+
+//     // auto lambda = [&](const IndexVector& itval) {
+//     //     IndexVector src_id = itval;
+//     //     for(size_t i = 0; i < perm.size(); i++) { src_id[i] = itval[perm[i]]; }
+//     //     size_t size = dst.block_size(itval);
+//     //     std::vector<TensorType> buf(size);
+//     //     src.get(src_id, buf);
+//     //     TensorType {1};
+//     //     if(scale != TensorType{1}) {
+//     //         for(size_t i = 0; i < size; i++) { 
+//     //             buf[i] *= scale; 
+//     //         }
+//     //     }
+//     //     if(is_assign)
+//     //         dst.put(itval, buf);
+//     //     else
+//     //         dst.add(itval, buf);
+//     // };
+
+//     PermVector perm_to_dest{perm.begin(), perm.end()};
+//     TensorType lscale = is_assign ? TensorType{0} : TensorType{1};
+
+//     auto lambda_hptt = [&](const IndexVector& itval) {
+//         IndexVector src_id = itval;
+//         size_t dst_size = dst.block_size(itval);
+//         std::vector<TensorType> src_buf(dst_size);
+//         src.get(src_id, src_buf);
+//         std::vector<TensorType> dest_buf(dst_size);
+        
+
+//         blockops::hptt::index_permute_hptt(lscale, dest_buf.data(), scale,
+//                                            src_buf.data(), perm_to_dest,
+//                                            src.block_dims(src_id));
+        
+//         if(is_assign)
+//             dst.put(itval, dest_buf);
+//         else
+//             dst.add(itval, dest_buf);
+//     };
+
+//     auto ec = dst.execution_context();
+//     block_for(*ec, dst(), lambda_hptt);
+// }
     
 
 private:
@@ -524,5 +531,3 @@ private:
 }; // class Scheduler
 
 } // namespace tamm
-
-#endif // TAMM_SCHEDULER_HPP_

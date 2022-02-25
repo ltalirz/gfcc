@@ -1,9 +1,12 @@
-#ifndef TAMM_TENSOR_HPP_
-#define TAMM_TENSOR_HPP_
+#pragma once
 
 #include "tamm/tensor_impl.hpp"
+#include "tamm/symbol.hpp"
 
 namespace tamm {
+
+template <typename T>
+class LabeledTensor;
 
 /**
  * @ingroup tensors
@@ -14,7 +17,7 @@ namespace tamm {
  * @tparam T type for the Tensor value
  */
 template<typename T>
-class Tensor {
+class Tensor : public Symbol {
 public:
     /**
      * @brief Construct a scalar Tensor with 0-modes
@@ -44,11 +47,6 @@ public:
          impl_ = std::make_shared<TensorImpl<T>>(tis_vec);
       //}
     }
-    
-    Tensor(ProcGrid pg, std::vector<TiledIndexSpace> tis_vec) {
-      EXPECTS(tis_vec.size() == 2); 
-      impl_ = std::make_shared<DenseTensorImpl<T>>(tis_vec, pg, true);
-    }
 
     /**
      * @brief Construct a new Tensor object from a vector of TiledIndexLabel
@@ -74,11 +72,8 @@ public:
       //}
     }
 
-    Tensor(ProcGrid pg, std::vector<TiledIndexLabel> til_vec) {
-      EXPECTS(til_vec.size() == 2); 
-      impl_ = std::make_shared<DenseTensorImpl<T>>(til_vec, pg, true);
-    }
-
+    Tensor(const Tensor<T>& opt_tensor, size_t unit_tis_count):
+      impl_{std::make_shared<TensorUnitTiled<T>>(opt_tensor, unit_tis_count)} {}
 
     // SpinTensor Constructors
     /**
@@ -139,6 +134,22 @@ public:
     Tensor(IndexLabelVec t_lbls, std::vector<size_t> spin_sizes) :
       impl_{std::make_shared<TensorImpl<T>>(t_lbls, spin_sizes)} {}
 
+    using MapFunc = std::function<IndexVector(const IndexVector &)>;
+    using CopyFunc = std::function<void(const BlockSpan<T>&, BlockSpan<T>&, const IndexVector&)>;
+    Tensor(Tensor<T> ref_tensor, TiledIndexSpaceVec t_spaces,
+           MapFunc ref_map_func)
+        : impl_{std::make_shared<ViewTensorImpl<T>>(ref_tensor, t_spaces,
+                                                    ref_map_func)} {}
+
+    Tensor(Tensor<T> ref_tensor, IndexLabelVec t_labels, MapFunc ref_map_func)
+        : impl_{std::make_shared<ViewTensorImpl<T>>(ref_tensor, t_labels,
+                                                    ref_map_func)} {}
+
+    Tensor(Tensor<T> ref_tensor, IndexLabelVec t_labels, MapFunc ref_map_func,
+           CopyFunc get_copy, CopyFunc put_copy)
+        : impl_{std::make_shared<ViewTensorImpl<T>>(
+              ref_tensor, t_labels, ref_map_func, get_copy, put_copy)} {}
+
     // LambdaTensor Constructors
     /**
      * @brief Signature description for Lambda functor
@@ -160,6 +171,9 @@ public:
 
     Tensor(IndexLabelVec t_labels, Func lambda) :
       impl_{std::make_shared<LambdaTensorImpl<T>>(t_labels, lambda)} {}
+
+    Tensor(IndexLabelVec t_labels, Tensor<T> ref_tensor, IndexLabelVec ref_labels, IndexLabelVec use_labels, std::vector<TranslateFunc> translate_func_vec) :
+      impl_{std::make_shared<LambdaTensorImpl<T>>(t_labels, ref_tensor, ref_labels, use_labels, translate_func_vec)} {}
 
     /**
      * @brief Construct a new Tensor object with a Lambda function
@@ -199,11 +213,6 @@ public:
          impl_ = std::make_shared<TensorImpl<T>>(tis);
      //}
     }
-    
-    Tensor(ProcGrid pg, std::initializer_list<TiledIndexSpace> tis) {
-      EXPECTS(tis.size() == 2); 
-      impl_ = std::make_shared<DenseTensorImpl<T>>(tis, pg, true);
-    }
 
     /**
      * @brief Construct a new Tensor object from a set of TiledIndexLabel
@@ -227,11 +236,6 @@ public:
       // else {
          impl_ = std::make_shared<TensorImpl<T>>(lbls);
       //}
-    }
-
-    Tensor(ProcGrid pg, const std::initializer_list<TiledIndexLabel>& lbls) {
-      EXPECTS(lbls.size() == 2); 
-      impl_ = std::make_shared<DenseTensorImpl<T>>(lbls, pg, true);
     }
 
     /**
@@ -459,6 +463,10 @@ public:
       return impl_->has_spin();
     }
 
+    TensorBase::TensorKind kind() const {
+      return impl_->kind();
+    }
+
     bool has_spatial() const {
       return impl_->has_spatial();
     }
@@ -487,14 +495,80 @@ public:
       return impl_->access_local_buf();
     }
 
+    size_t local_buf_size() const {
+      return impl_->local_buf_size();
+    }
+
+    size_t total_buf_size(Proc proc) const {
+      return impl_->total_buf_size(proc);
+    }
+
+    MemoryRegion* memory_region() const {
+      return impl_->memory_region();
+    }
+
+    void add_update(const TensorUpdate& new_update) {
+      impl_->add_update(new_update);
+    }
+
+    std::vector<TensorUpdate> get_updates() const {
+        return impl_->get_updates();
+    }
+
+
+    void clear_updates() {
+      impl_->clear_updates();
+    }
+
+    size_t version() const {
+      return impl_->version();
+    }
+
+    void update_version(size_t inc = 1) {
+      impl_->update_version(inc);
+    }
+
     int64_t size() const {
       return impl_->size();
     }
 
-private:
+    ProcGrid proc_grid() const {
+      return impl_->distribution().proc_grid();
+    }
+
+    bool is_allocated() const { return impl_->is_allocated(); }
+
+    bool is_block_cyclic() const { return impl_->is_block_cyclic(); }
+
+    void set_block_cyclic(ProcGrid pg) {
+      EXPECTS(!is_allocated());
+      auto new_tis_vec = tiled_index_spaces();
+      EXPECTS(new_tis_vec.size() == 2);
+      impl_ = std::make_shared<DenseTensorImpl<T>>(new_tis_vec, pg, true);
+    }
+
+    void set_dense(ProcGrid pg={}) {
+      EXPECTS(!is_allocated());
+      impl_ = std::make_shared<DenseTensorImpl<T>>(tiled_index_spaces(), pg, false);
+    }
+
+    template<typename... Args>
+    static void set_dense(Tensor<T>& tensor, Args&... rest) {
+      mark_dense(tensor, rest...);
+    }    
+
+    void set_restricted(ProcList proc_list) {
+      EXPECTS(!is_allocated());
+      impl_->set_proc_list(proc_list);
+    }
+
+    SpinMask spin_mask() const {
+      return impl_->spin_mask();
+    }
+
+  private:
     std::shared_ptr<TensorImpl<T>>
       impl_; /**< Shared pointer to the implementation object */
-
     // Private allocate and de-allocate functions
     /**
      * @brief Static allocation method (used internally only)
@@ -508,6 +582,8 @@ private:
      *
      */
     static void dealloc() {}
+
+    static void mark_dense() {}
 
     /**
      * @brief Static memory allocation method for a set of Tensors
@@ -534,6 +610,14 @@ private:
         tensor.impl_->deallocate();
         dealloc(rest...);
     }
+
+    template<typename... Args>
+    static void mark_dense(Tensor<T>& tensor, Args&... rest) {
+      EXPECTS(!tensor.is_allocated());
+      ProcGrid pg = {};
+      tensor.impl_ = std::make_shared<DenseTensorImpl<T>>(tensor.tiled_index_spaces(), pg, false);
+      mark_dense(rest...);
+    }    
 };
 
 template <typename T>
@@ -575,5 +659,3 @@ template<typename T>
 IndexedTensor(Tensor<T>, IndexVector) -> IndexedTensor<T>;
 
 } // namespace tamm
-
-#endif // TENSOR_HPP_

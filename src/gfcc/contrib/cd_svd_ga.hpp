@@ -1,8 +1,7 @@
 
-#ifndef TAMM_CD_SVD_GA_HPP_
-#define TAMM_CD_SVD_GA_HPP_
+#pragma once
 
-#include "hartree_fock_tamm.hpp"
+#include "scf_main.hpp"
 #include "tamm/eigen_utils.hpp"
 #include "json_data.hpp"
 
@@ -53,10 +52,183 @@ bool cd_debug = false;
     return ret;
   }
 
+std::tuple<TiledIndexSpace,TAMM_SIZE> setupMOIS(SystemData sys_data, bool triples=false, int nactv=0) {
 
+    TAMM_SIZE n_occ_alpha = sys_data.n_occ_alpha;
+    TAMM_SIZE n_occ_beta = sys_data.n_occ_beta;
+
+    Tile tce_tile = sys_data.options_map.ccsd_options.tilesize;
+    bool balance_tiles = sys_data.options_map.ccsd_options.balance_tiles;
+    if(!triples) {
+      if ((tce_tile < static_cast<Tile>(sys_data.nbf/10) || tce_tile < 50 || tce_tile > 100) && !sys_data.options_map.ccsd_options.force_tilesize) {
+        tce_tile = static_cast<Tile>(sys_data.nbf/10);
+        if(tce_tile < 50) tce_tile = 50; //50 is the default tilesize for CCSD.
+        if(tce_tile > 100) tce_tile = 100; //100 is the max tilesize for CCSD.
+        if(GA_Nodeid()==0) std::cout << std::endl << "Resetting CCSD tilesize to: " << tce_tile << std::endl;
+      }
+    }
+    else {
+      balance_tiles = false;
+      tce_tile = sys_data.options_map.ccsd_options.ccsdt_tilesize;
+    }
+
+    TAMM_SIZE nmo = sys_data.nmo;
+    TAMM_SIZE n_vir_alpha = sys_data.n_vir_alpha;
+    TAMM_SIZE n_vir_beta = sys_data.n_vir_beta;
+    TAMM_SIZE nocc = sys_data.nocc;
+
+    const TAMM_SIZE total_orbitals = nmo;
+
+    // Construction of tiled index space MO
+    TAMM_SIZE virt_alpha_int = nactv;
+    TAMM_SIZE virt_beta_int = virt_alpha_int;
+    TAMM_SIZE virt_alpha_ext = n_vir_alpha - nactv;
+    TAMM_SIZE virt_beta_ext = total_orbitals - (nocc+nactv+n_vir_alpha);    
+    IndexSpace MO_IS{range(0, total_orbitals),
+                    {
+                     {"occ", {range(0, nocc)}},
+                     {"occ_alpha", {range(0, n_occ_alpha)}},
+                     {"occ_beta", {range(n_occ_alpha, nocc)}},
+                     {"virt", {range(nocc, total_orbitals)}},
+                     {"virt_alpha", {range(nocc,nocc+n_vir_alpha)}},
+                     {"virt_beta", {range(nocc+n_vir_alpha, total_orbitals)}},
+                     {"virt_alpha_int", {range(nocc,nocc+nactv)}},
+                     {"virt_beta_int", {range(nocc+n_vir_alpha, nocc+nactv+n_vir_alpha)}},
+                     {"virt_int", {range(nocc,nocc+nactv), range(nocc+n_vir_alpha, nocc+nactv+n_vir_alpha)}},
+                     {"virt_alpha_ext", {range(nocc+nactv,nocc+n_vir_alpha)}},
+                     {"virt_beta_ext", {range(nocc+nactv+n_vir_alpha, total_orbitals)}},
+                     {"virt_ext", {range(nocc+nactv,nocc+n_vir_alpha), range(nocc+nactv+n_vir_alpha, total_orbitals)}},
+                    },
+                     {
+                      {Spin{1}, {range(0, n_occ_alpha), range(nocc,nocc+n_vir_alpha)}},
+                      {Spin{2}, {range(n_occ_alpha, nocc), range(nocc+n_vir_alpha, total_orbitals)}} 
+                     }
+                     };
+
+    std::vector<Tile> mo_tiles;
+    
+    if(!balance_tiles) {
+      tamm::Tile est_nt = n_occ_alpha/tce_tile;
+      tamm::Tile last_tile = n_occ_alpha%tce_tile;
+      for (tamm::Tile x=0;x<est_nt;x++)mo_tiles.push_back(tce_tile);
+      if(last_tile>0) mo_tiles.push_back(last_tile);
+      est_nt = n_occ_beta/tce_tile;
+      last_tile = n_occ_beta%tce_tile;
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(tce_tile);
+      if(last_tile>0) mo_tiles.push_back(last_tile);
+      // est_nt = n_vir_alpha/tce_tile;
+      // last_tile = n_vir_alpha%tce_tile;
+      // for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(tce_tile);
+      // if(last_tile>0) mo_tiles.push_back(last_tile);
+      est_nt = virt_alpha_int/tce_tile;
+      last_tile = virt_alpha_int%tce_tile;
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(tce_tile);
+      if(last_tile>0) mo_tiles.push_back(last_tile);
+      est_nt = virt_alpha_ext/tce_tile;
+      last_tile = virt_alpha_ext%tce_tile;
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(tce_tile);
+      if(last_tile>0) mo_tiles.push_back(last_tile);
+      // est_nt = n_vir_beta/tce_tile;
+      // last_tile = n_vir_beta%tce_tile;
+      // for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(tce_tile);
+      // if(last_tile>0) mo_tiles.push_back(last_tile);
+      est_nt = virt_beta_int/tce_tile;
+      last_tile = virt_beta_int%tce_tile;
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(tce_tile);
+      if(last_tile>0) mo_tiles.push_back(last_tile);
+      est_nt = virt_beta_ext/tce_tile;
+      last_tile = virt_beta_ext%tce_tile;    
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(tce_tile);
+      if(last_tile>0) mo_tiles.push_back(last_tile);
+    }
+    else {
+      tamm::Tile est_nt = static_cast<tamm::Tile>(std::ceil(1.0 * n_occ_alpha / tce_tile));
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(n_occ_alpha / est_nt + (x<(n_occ_alpha % est_nt)));
+
+      est_nt = static_cast<tamm::Tile>(std::ceil(1.0 * n_occ_beta / tce_tile));
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(n_occ_beta / est_nt + (x<(n_occ_beta % est_nt)));
+
+      // est_nt = static_cast<tamm::Tile>(std::ceil(1.0 * n_vir_alpha / tce_tile));
+      // for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(n_vir_alpha / est_nt + (x<(n_vir_alpha % est_nt)));
+
+      est_nt = static_cast<tamm::Tile>(std::ceil(1.0 * virt_alpha_int / tce_tile));
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(virt_alpha_int / est_nt + (x<(virt_alpha_int % est_nt)));
+
+      est_nt = static_cast<tamm::Tile>(std::ceil(1.0 * virt_alpha_ext / tce_tile));
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(virt_alpha_ext / est_nt + (x<(virt_alpha_ext % est_nt)));      
+
+      // est_nt = static_cast<tamm::Tile>(std::ceil(1.0 * n_vir_beta / tce_tile));
+      // for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(n_vir_beta / est_nt + (x<(n_vir_beta % est_nt)));
+
+      est_nt = static_cast<tamm::Tile>(std::ceil(1.0 * virt_beta_int / tce_tile));
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(virt_beta_int / est_nt + (x<(virt_beta_int % est_nt)));
+
+      est_nt = static_cast<tamm::Tile>(std::ceil(1.0 * virt_beta_ext / tce_tile));
+      for (tamm::Tile x=0;x<est_nt;x++) mo_tiles.push_back(virt_beta_ext / est_nt + (x<(virt_beta_ext % est_nt)));      
+    }
+
+    TiledIndexSpace MO{MO_IS, mo_tiles}; //{ova,ova,ovb,ovb}};
+
+    return std::make_tuple(MO,total_orbitals);
+}
+
+void update_sysdata(SystemData& sys_data, TiledIndexSpace& MO) {
+  const bool do_freeze = sys_data.n_frozen_core > 0 || sys_data.n_frozen_virtual > 0;
+  TAMM_SIZE total_orbitals = sys_data.nmo;
+  if(do_freeze) {
+    sys_data.nbf -= (sys_data.n_frozen_core + sys_data.n_frozen_virtual);
+    sys_data.n_occ_alpha -= sys_data.n_frozen_core;
+    sys_data.n_vir_alpha -= sys_data.n_frozen_virtual;
+    sys_data.n_occ_beta -= sys_data.n_frozen_core;
+    sys_data.n_vir_beta -= sys_data.n_frozen_virtual;    
+    sys_data.update();
+    std::tie(MO,total_orbitals) = setupMOIS(sys_data);
+  }
+}
+
+Matrix reshape_mo_matrix(SystemData sys_data, Matrix& emat) {
+
+  const int noa = sys_data.n_occ_alpha;
+  const int nob = sys_data.n_occ_beta;
+  const int nva = sys_data.n_vir_alpha;
+  const int nvb = sys_data.n_vir_beta;
+  const int nocc = sys_data.nocc;
+  const int N_eff = sys_data.nmo;
+
+  const int n_frozen_core    = sys_data.n_frozen_core;
+  const int n_frozen_virtual = sys_data.n_frozen_virtual;
+
+  Matrix cvec(N_eff,N_eff);
+  const int block2_off = 2*n_frozen_core+noa;
+  const int block3_off = 2*n_frozen_core+nocc+n_frozen_virtual;
+  const int last_block_off = block3_off+n_frozen_virtual+nva;
+
+  cvec.block(0,0,noa,noa)        = emat.block(n_frozen_core,n_frozen_core,noa,noa);
+  cvec.block(0,noa,noa,nob)      = emat.block(n_frozen_core,block2_off,noa,nob);
+  cvec.block(0,nocc,noa,nva)     = emat.block(n_frozen_core,block3_off,noa,nva);
+  cvec.block(0,nocc+nva,noa,nvb) = emat.block(n_frozen_core,last_block_off,noa,nvb);
+
+  cvec.block(noa,0,nob,noa)        = emat.block(block2_off,n_frozen_core,nob,noa);
+  cvec.block(noa,noa,nob,nob)      = emat.block(block2_off,block2_off,nob,nob);
+  cvec.block(noa,nocc,nob,nva)     = emat.block(block2_off,block3_off,nob,nva);
+  cvec.block(noa,nocc+nva,nob,nvb) = emat.block(block2_off,last_block_off,nob,nvb);
+
+  cvec.block(nocc,0,nva,noa)        = emat.block(block3_off,n_frozen_core,nva,noa);
+  cvec.block(nocc,noa,nva,nob)      = emat.block(block3_off,block2_off,nva,nob);    
+  cvec.block(nocc,nocc,nva,nva)     = emat.block(block3_off,block3_off,nva,nva);  
+  cvec.block(nocc,nocc+nva,nva,nvb) = emat.block(block3_off,last_block_off,nva,nvb);  
+
+  cvec.block(nocc+nva,0,nvb,noa)        = emat.block(last_block_off,n_frozen_core,nvb,noa);
+  cvec.block(nocc+nva,noa,nvb,nob)      = emat.block(last_block_off,block2_off,nvb,nob);    
+  cvec.block(nocc+nva,nocc,nvb,nva)     = emat.block(last_block_off,block3_off,nvb,nva);  
+  cvec.block(nocc+nva,nocc+nva,nvb,nvb) = emat.block(last_block_off,last_block_off,nvb,nvb);  
+  emat.resize(0,0);
+
+  return cvec;
+}
 
 template <typename TensorType>
-Tensor<TensorType> cd_svd_ga(SystemData sys_data, ExecutionContext& ec, TiledIndexSpace& tMO, TiledIndexSpace& tAO,
+Tensor<TensorType> cd_svd_ga(SystemData& sys_data, ExecutionContext& ec, TiledIndexSpace& tMO, TiledIndexSpace& tAO,
   TAMM_SIZE& chol_count, const TAMM_GA_SIZE max_cvecs, libint2::BasisSet& shells, Tensor<TensorType>& lcao) {
 
   using libint2::Atom;
@@ -373,7 +545,11 @@ Tensor<TensorType> cd_svd_ga(SystemData sys_data, ExecutionContext& ec, TiledInd
   auto hf_time = std::chrono::duration_cast<std::chrono::duration<double>>((hf_t2 - hf_t1)).count();
   if(iproc == 0) std::cout << std::endl << "Time taken for cholesky decomp: " << hf_time << " secs" << endl;
  
-  dimsmo[0] =  N; dimsmo[1] =  N; dimsmo[2] = count;
+  update_sysdata(sys_data, tMO);
+
+  TAMM_GA_SIZE N_eff = tMO("all").max_num_indices();
+ 
+  dimsmo[0] =  N_eff; dimsmo[1] =  N_eff; dimsmo[2] = count;
   chnkmo[0] = -1; chnkmo[1] = -1; chnkmo[2] = count;
   
   int g_test2 = NGA_Create64(ga_eltype,3,dimsmo,const_cast<char*>("CholVecMOTmp"),chnkmo);
@@ -422,6 +598,8 @@ Tensor<TensorType> cd_svd_ga(SystemData sys_data, ExecutionContext& ec, TiledInd
   int64_t taskcount = 0;
   int64_t next = ac_fetch_add(ga_ac, 0, 1);
 
+  const bool do_freeze = (sys_data.n_frozen_core > 0 || sys_data.n_frozen_virtual > 0);
+
   for(decltype(count) kk=0;kk<count;kk++) {
     if(next == taskcount) {
 
@@ -458,7 +636,8 @@ Tensor<TensorType> cd_svd_ga(SystemData sys_data, ExecutionContext& ec, TiledInd
         g_num += m;
         std::vector<TensorType> k_pi(N*m);
         std::vector<TensorType> k_qj(N*m);
-        cblas_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,N,m,nbf,
+         
+        blas::gemm(blas::Layout::RowMajor,blas::Op::Trans,blas::Op::NoTrans,N,m,nbf,
                     1.0,k_movecs_sorted,N,&k_ij[0],nbf,0,&k_pi[0],N);
 
         for(auto x=0;x<N*m;x++) k_qj[x] = k_pi[x]; 
@@ -469,17 +648,17 @@ Tensor<TensorType> cd_svd_ga(SystemData sys_data, ExecutionContext& ec, TiledInd
             k_pi[i*m+j] *= sf;
         }
 
-        cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,N,N,m,
+        blas::gemm(blas::Layout::RowMajor,blas::Op::NoTrans,blas::Op::Trans,N,N,m,
                 1,&k_pi[0],N,&k_qj[0],N,0,&k_pq[0],N);
 
       #else
 
         //---------Two-Step-Contraction----
         auto cvpr_t1 = std::chrono::high_resolution_clock::now();
-        cblas_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,N,nbf,nbf,
+        blas::gemm(blas::Layout::RowMajor,blas::Op::Trans,blas::Op::NoTrans,N,nbf,nbf,
                     1,k_movecs_sorted,N,&k_ij[0],nbf,0,&k_pj[0],nbf);
         
-        cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,N,N,nbf,
+        blas::gemm(blas::Layout::RowMajor,blas::Op::NoTrans,blas::Op::NoTrans,N,N,nbf,
                     1,&k_pj[0],nbf,k_movecs_sorted,N,0,&k_pq[0],N);
       
         auto cvpr_t2 = std::chrono::high_resolution_clock::now();
@@ -488,8 +667,19 @@ Tensor<TensorType> cd_svd_ga(SystemData sys_data, ExecutionContext& ec, TiledInd
       #endif
 
       int64_t lo_mo[3] = {0,0,kk};
-      int64_t hi_mo[3] = {N-1,N-1,kk};
-      int64_t ld_mo[2] = {N,1};        
+      int64_t hi_mo[3] = {N_eff-1,N_eff-1,kk};
+      int64_t ld_mo[2] = {N_eff,1};
+
+      if(do_freeze) {
+        Matrix emat = Eigen::Map<Matrix>(k_pq.data(),N,N);
+        k_pq.clear();
+
+        Matrix cvec = reshape_mo_matrix(sys_data,emat);
+
+        k_pq.resize(N_eff*N_eff); 
+        Eigen::Map<Matrix>(k_pq.data(), N_eff, N_eff) = cvec;
+        cvec.resize(0,0);
+      }
 
       NGA_Put64(g_chol_mo,lo_mo,hi_mo,&k_pq[0],ld_mo);
       next = ac_fetch_add(ga_ac, 0, 1);
@@ -630,4 +820,3 @@ Tensor<TensorType> cd_svd_ga(SystemData sys_data, ExecutionContext& ec, TiledInd
   return CholVpr_tamm;
 }
 
-#endif //TAMM_CD_SVD_HPP_

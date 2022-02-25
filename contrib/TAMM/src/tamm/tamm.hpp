@@ -1,5 +1,4 @@
-#ifndef TAMM_TAMM_HPP_
-#define TAMM_TAMM_HPP_
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -27,10 +26,15 @@
 #include "tamm/dag_impl.hpp"
 #include "tamm/tamm_utils.hpp"
 #include "tamm/lru_cache.hpp"
+#include "tamm/blockops_blis.hpp"
+#include "tamm/op_dag.hpp"
+//#ifdef USE_TALSH
+// #include "tamm/blockops_talsh.hpp"
+//#endif
+#include <nlohmann/json.hpp>
 
 namespace tamm {
 void initialize(int argc, char *argv[]);
 void finalize();
+void tamm_terminate(std::string msg);
 }
-
-#endif // TAMM_TAMM_H_

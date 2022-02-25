@@ -1,7 +1,7 @@
-#ifndef TAMM_TILED_INDEX_SPACE_HPP_
-#define TAMM_TILED_INDEX_SPACE_HPP_
+#pragma once
 
 #include "tamm/index_space.hpp"
+#include "tamm/symbol.hpp"
 #include <set>
 
 namespace tamm {
@@ -88,7 +88,9 @@ public:
      * @param [in] range Range of the reference TiledIndexSpace
      */
     TiledIndexSpace(const TiledIndexSpace& t_is, const Range& range) :
-      TiledIndexSpace{t_is, construct_index_vector(range)} {}
+      TiledIndexSpace{t_is, construct_index_vector(range)} {
+        is_dense_subspace_ = (range.step() == 1);
+      }
 
     /**
      * @brief Construct a new sub TiledIndexSpace object from
@@ -173,6 +175,8 @@ public:
 
     TiledIndexLabel label(Label lbl = make_label()) const;
 
+    TiledIndexLabel string_label(std::string lbl_str) const;
+
     /**
      * @brief Construct a tuple of TiledIndexLabel given a count, subspace name
      * and a starting integer Label
@@ -183,7 +187,7 @@ public:
      * @returns a tuple of TiledIndexLabel
      */
     template <size_t c_lbl>
-    auto labels(std::string id, Label start = make_label()) const {
+    auto labels(std::string id = "all", Label start = make_label()) const {
     for (size_t i = 0; i < c_lbl - 1; i++) {
         auto temp = make_label();
     }
@@ -341,7 +345,7 @@ public:
      * then this
      */
     bool is_less_than(const TiledIndexSpace& rhs) const {
-        return (tiled_info_ < rhs.tiled_info_);
+        return (hash_value_ < rhs.hash());
     }
 
     /**
@@ -890,7 +894,9 @@ public:
     TiledIndexSpace parent_tis() const {
         return (*parent_tis_.get());
     }
-    
+
+    bool is_dense_subspace() const { return is_dense_subspace_; }
+
     /**
      * @brief Equality comparison operator
      *
@@ -1497,6 +1503,7 @@ protected:
       parent_tis_; /**< Shared pointer to the parent
                     TiledIndexSpace object*/
     size_t hash_value_;
+    bool is_dense_subspace_ = false;
 
     /**
      * @brief Return the corresponding tile position of an index for a give
@@ -1659,7 +1666,7 @@ inline bool operator>=(const TiledIndexSpace& lhs, const TiledIndexSpace& rhs) {
     return (rhs <= lhs);
 }
 
-class TileLabelElement {
+class TileLabelElement : public Symbol {
 public:
     TileLabelElement()                        = default;
     TileLabelElement(const TileLabelElement&) = default;
@@ -1668,13 +1675,16 @@ public:
     TileLabelElement& operator=(const TileLabelElement&) = default;
     TileLabelElement& operator=(TileLabelElement&&) = default;
 
-    TileLabelElement(const TiledIndexSpace& tis, Label label = 0) :
+    TileLabelElement(const TiledIndexSpace& tis, Label label = 0, std::string label_str = "") :
       tis_{tis},
-      label_{label} {}
+      label_{label}, 
+      label_str_{label_str} {}
 
     const TiledIndexSpace& tiled_index_space() const { return tis_; }
 
     Label label() const { return label_; }
+
+    std::string label_str() const { return label_str_; }
 
     bool is_compatible_with(const TiledIndexSpace& tis) const {
         return tis_.is_compatible_with(tis);
@@ -1683,20 +1693,34 @@ public:
 private:
     TiledIndexSpace tis_;
     Label label_;
+    std::string label_str_;
 }; // class TileLabelElement
 
 // Comparison operator implementations
 inline bool operator==(const TileLabelElement& lhs,
                        const TileLabelElement& rhs) {
+    bool has_same_label = false;
+    if(lhs.label_str() != "" && rhs.label_str() != "") {
+      has_same_label = lhs.label_str() == rhs.label_str();
+    } else {
+      has_same_label = lhs.label() == rhs.label();
+    }
     return lhs.tiled_index_space() == rhs.tiled_index_space() &&
-           lhs.label() == rhs.label();
+           has_same_label;
 }
 
 inline bool operator<(const TileLabelElement& lhs,
                       const TileLabelElement& rhs) {
+    bool is_less_then = false;
+    if(lhs.label_str() != "" && rhs.label_str() != "") {
+      is_less_then = lhs.label_str() < rhs.label_str();
+    } else {
+      is_less_then = lhs.label() < rhs.label();
+    }
+
     return lhs.tiled_index_space() < rhs.tiled_index_space() ||
            (lhs.tiled_index_space() == rhs.tiled_index_space() &&
-            lhs.label() < rhs.label());
+            is_less_then);
 }
 
 inline bool operator!=(const TileLabelElement& lhs,
@@ -1724,7 +1748,7 @@ inline bool operator>=(const TileLabelElement& lhs,
  * be positive.
  *
  */
-class TiledIndexLabel {
+class TiledIndexLabel : public SymbolInterface {
 public:
     // Constructor
     TiledIndexLabel()                       = default;
@@ -1757,7 +1781,12 @@ public:
         // no-op
     }
 
-    
+    TiledIndexLabel(const TiledIndexSpace &tis, const std::string &lbl_str)
+        : TiledIndexLabel{TileLabelElement{tis, -1, lbl_str},
+                          std::vector<TileLabelElement>{}} {
+      // no-op
+    }
+
     TiledIndexLabel(const TiledIndexSpace &tis,
                     const std::vector<TiledIndexLabel> &secondary_labels)
         : TiledIndexLabel{TileLabelElement{tis, make_label()}, secondary_labels} {
@@ -1802,6 +1831,10 @@ public:
             secondary_labels_.push_back(lbl.primary_label());
         }
         validate();
+    }
+
+    void* get_symbol_ptr() const {
+        return primary_label_.get_symbol_ptr();
     }
 
     /**
@@ -1861,6 +1894,8 @@ public:
 
     Label label() const { return primary_label_.label(); }
 
+    std::string label_str() const { return primary_label_.label_str(); }
+
     /// @todo: this is never called from outside currently, should this be
     /// private and used internally?
     bool is_compatible_with(const TiledIndexSpace& tis) const {
@@ -1898,6 +1933,15 @@ public:
         return tiled_index_space().is_dependent();
     }
 
+    void set_spin_pos(SpinPosition spin_pos) {
+      spin_pos_ = spin_pos;
+      has_spin_ = true;
+    }
+
+    SpinPosition spin_pos() const {
+      return spin_pos_;
+    }
+
     // Comparison operators
     friend bool operator==(const TiledIndexLabel& lhs,
                            const TiledIndexLabel& rhs);
@@ -1918,7 +1962,8 @@ protected:
     TileLabelElement primary_label_;
     std::vector<TileLabelElement> secondary_labels_;
     // std::vector<TiledIndexLabel> dep_labels_;
-
+    bool has_spin_ = false;
+    SpinPosition spin_pos_ = SpinPosition::ignore;
     /**
      * @brief Validates a TiledIndexLabel object with regard to its reference
      * TiledIndexSpace and dependent labels
@@ -2012,6 +2057,11 @@ inline TiledIndexLabel TiledIndexSpace::label(Label lbl) const {
     return TiledIndexLabel{*this, lbl};
 }
 
+inline TiledIndexLabel
+TiledIndexSpace::string_label(std::string lbl_str) const {
+  return TiledIndexLabel{*this, lbl_str};
+}
+
 template<size_t... Is>
 auto TiledIndexSpace::labels_impl(std::string id, Label start,
                                   std::index_sequence<Is...>) const {
@@ -2019,5 +2069,3 @@ auto TiledIndexSpace::labels_impl(std::string id, Label start,
 }
 
 } // namespace tamm
-
-#endif // TAMM_TILED_INDEX_SPACE_HPP_

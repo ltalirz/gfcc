@@ -1,5 +1,4 @@
-#ifndef TAMM_METHODS_GFCCSD_IP_HPP_
-#define TAMM_METHODS_GFCCSD_IP_HPP_
+#pragma once
 
 #include <algorithm>
 #include <complex>
@@ -62,6 +61,7 @@ void gfccsd_x1_a(/* ExecutionContext& ec, */
     //if(debug) sch.execute();
 
 }
+
 
 template<typename T>
 void gfccsd_x2_a(/* ExecutionContext& ec, */
@@ -148,6 +148,34 @@ void gfccsd_x2_a(/* ExecutionContext& ec, */
     i_6_temp_bab = {o_beta, o_alpha,o_beta};
     i_6_temp_bba = {o_beta, o_beta, o_alpha};
   }
+  //  sch
+  //    .allocate(i_6,i_10,i_11,i0_temp,i_6_temp)
+  //    ( i0(p4,h1,h2)                  =  0                                               )
+  //    ( i0(p4,h1,h2)                 +=         x1(h9)        * ix2_1(h9,p4,h1,h2)       ) 
+  //    ( i0_temp(p3,h1,h2)             =         x2(p3,h1,h8)  * ix2_2(h8,h2)             )
+  //    ( i0(p3,h1,h2)                 += -1    * i0_temp(p3,h1,h2)                        )
+  //    ( i0(p3,h2,h1)                 +=         i0_temp(p3,h1,h2)                        )
+  //    ( i0(p4,h1,h2)                 +=         x2(p8,h1,h2)  * ix2_3(p4,p8)             )
+  //    ( i0(p3,h1,h2)                 +=  0.5  * x2(p3,h9,h10) * ix2_4(h9,h10,h1,h2)      ) //O4V
+  //    ( i0_temp(p4,h1,h2)             =         x2(p8,h1,h7)  * ix2_5(h7,p4,h2,p8)       ) //O3V2
+  //    ( i0(p4,h1,h2)                 += -1    * i0_temp(p4,h1,h2)                        )
+  //    ( i0(p4,h2,h1)                 +=         i0_temp(p4,h1,h2)                        )
+  //    (   i_6(h10,h1,h2)              = -1    * x1(h8)        * ix2_6_1(h8,h10,h1,h2)    )
+  //    (   i_6(h10,h1,h2)             +=         x2(p5,h1,h2)  * ix2_6_2(h10,p5)          )
+  //    (   i_6_temp(h10,h2,h1)         =         x2(p9,h1,h8)  * ix2_6_3(h8,h10,h2,p9)    ) //O4V
+  //    (   i_6(h10,h1,h2)             += -1    * i_6_temp(h10,h1,h2)                      )
+  //    (   i_6(h10,h2,h1)             +=         i_6_temp(h10,h1,h2)                      ) 
+  //    ( i0(p3,h1,h2)                  +=         d_t1(p3,h10)       * i_6(h10,h1,h2)       )
+
+  //    (   i_10(p5)                    =  0.5  * x2(p8,h6,h7)  * v2(h6,h7,p5,p8)          )
+  //    ( i0(p3,h1,h2)                 +=  1.0  * d_t2(p3,p5,h1,h2)  * i_10(p5)              )
+
+  //    (   i_11(h6,h1,p5)              =         x2(p8,h1,h7)  * v2(h6,h7,p5,p8)          ) //O3V2
+  //    ( i0_temp(p3,h2,h1)             =         d_t2(p3,p5,h1,h6)  * i_11(h6,h2,p5)        ) //O3V2
+  //    ( i0(p3,h1,h2)                 +=         i0_temp(p3,h1,h2)                        )
+  //    ( i0(p3,h2,h1)                 += -1    * i0_temp(p3,h1,h2)                        ) 
+  //    .deallocate(i_6,i_10,i_11,i0_temp,i_6_temp);//.execute();
+
     sch
     .allocate(i_6_aaa,i_6_bab,
               i_10_a,i_11_aaa,i_11_bab,i_11_bba,
@@ -291,4 +319,3 @@ void gfccsd_x2_a(/* ExecutionContext& ec, */
 
 }
 
-#endif //TAMM_METHODS_GFCCSD_IP_HPP_

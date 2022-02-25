@@ -1,10 +1,9 @@
-#ifndef TAMM_MEMORY_MANAGER_GA_H_
-#define TAMM_MEMORY_MANAGER_GA_H_
+#pragma once
 
 #include "tamm/memory_manager.hpp"
 #include "armci.h"
-#include "ga.h"
-#include "ga-mpi.h"
+#include "ga/ga.h"
+#include "ga/ga-mpi.h"
 
 #include <vector>
 #include <string>
@@ -94,12 +93,11 @@ class MemoryManagerGA : public MemoryManager {
     int64_t nelements_min, nelements_max;
 
     GA_Pgroup_set_default(ga_pg_);
-
-          {
+    {
        TimerGuard tg_total{&memTime5};
-       MPI_Allreduce(&nels, &nelements_min, 1, MPI_LONG_LONG, MPI_MIN, pg_.comm());
-       MPI_Allreduce(&nels, &nelements_max, 1, MPI_LONG_LONG, MPI_MAX, pg_.comm());
-          }
+       nelements_min = pg_.allreduce(&nels, ReduceOp::min);
+       nelements_max = pg_.allreduce(&nels, ReduceOp::max);
+    }
     std::string array_name{"array_name"+std::to_string(++ga_counter_)};
 
     if (nelements_min == nels && nelements_max == nels) {
@@ -112,11 +110,11 @@ class MemoryManagerGA : public MemoryManager {
       int64_t dim, block = nranks;
       {
       TimerGuard tg_total{&memTime5};
-      MPI_Allreduce(&nels, &dim, 1, MPI_LONG_LONG, MPI_SUM, pg_.comm());
+      dim = pg_.allreduce(&nels, ReduceOp::sum);
       }
       {
       TimerGuard tg_total{&memTime6};
-      MPI_Allgather(&nels, 1, MPI_LONG_LONG, &pmr->map_[1], 1, MPI_LONG_LONG, pg_.comm());
+      pg_.allgather(&nels, &pmr->map_[1]);
       }
       pmr->map_[0] = 0; // @note this is not set by MPI_Exscan
      {
@@ -157,7 +155,8 @@ class MemoryManagerGA : public MemoryManager {
   }
 
   MemoryRegion* alloc_coll_balanced(ElementType eltype,
-                                    Size max_nelements) override {
+                                    Size max_nelements,
+                                    ProcList proc_list = {}) override {
 
     MemoryRegionGA* pmr = nullptr;
      {
@@ -178,6 +177,13 @@ class MemoryManagerGA : public MemoryManager {
     NGA_Set_data64(pmr->ga_, 1, &dim, ga_eltype);
     GA_Set_chunk64(pmr->ga_, &chunk);
     GA_Set_pgroup(pmr->ga_, pg().ga_pg());
+
+    if (proc_list.size() > 0 ) {
+      int nproc = proc_list.size();
+      int proclist_c[nproc]; 
+      std::copy(proc_list.begin(), proc_list.end(), proclist_c);
+      GA_Set_restricted(pmr->ga_, proclist_c, nproc);
+    }
 
         {
     TimerGuard tg_total{&memTime9};
@@ -385,5 +391,3 @@ class MemoryManagerGA : public MemoryManager {
 };  // class MemoryManagerGA
 
 }  // namespace tamm
-
-#endif // TAMM_MEMORY_MANAGER_GA_H_

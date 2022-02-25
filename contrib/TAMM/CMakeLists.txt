@@ -9,7 +9,7 @@ find_package( CMakeBuild QUIET )
 
 if( NOT ${CMakeBuild_FOUND} )
   if (NOT CMSB_TAG)
-    set(CMSB_TAG dc7840bca1c879f09c193a392696fa7246856f22)
+    set(CMSB_TAG c7a01660058e096795baddba6158b9cdc51ca93e)
     if (ENABLE_DEV_MODE)
       set(CMSB_TAG master)
     endif()
@@ -30,7 +30,15 @@ endif()
 
 set(CMSB_PROJECTS TAMM)
 
-set(TAMM_DEPENDENCIES NJSON MSGSL DOCTEST Eigen3 LibInt2 HPTT HDF5) # GlobalArrays BLAS LAPACK
+set(TAMM_DEPENDENCIES NJSON MSGSL DOCTEST Eigen3 HPTT HDF5)
+
+if(NOT DEFINED BUILD_METHODS)
+  list(APPEND TAMM_DEPENDENCIES LibInt2)
+else()
+  if(BUILD_METHODS)
+    list(APPEND TAMM_DEPENDENCIES LibInt2)
+  endif()
+endif()
 
 if(USE_CUDA OR USE_HIP) 
    list(APPEND TAMM_DEPENDENCIES TALSH)
@@ -53,7 +61,11 @@ if(USE_GA_AT)
         list(APPEND TAMM_DEPENDENCIES LAPACK BLAS)
     endif()
 else()
-    list(APPEND TAMM_DEPENDENCIES GlobalArrays)
+    list(APPEND TAMM_DEPENDENCIES GlobalArrays) #BLAS LAPACK
+endif()
+
+if(USE_GAUXC)
+  list(APPEND TAMM_DEPENDENCIES GauXC)
 endif()
 
 set(BUILD_METHODS OFF)
@@ -62,7 +74,7 @@ set(TAMM_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests/)
 
 
 if(NOT CMAKE_BUILD_TYPE)
-    set (CMAKE_BUILD_TYPE Release)
+  set (CMAKE_BUILD_TYPE Release)
 endif()
 
 set(CMSB_BASISSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../basis)
