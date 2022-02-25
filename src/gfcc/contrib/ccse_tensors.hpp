@@ -1,7 +1,7 @@
 #pragma once
 
-#include "cd_svd/cd_svd_ga.hpp"
-#include "cd_svd/two_index_transform.hpp"
+#include "cd_svd_ga.hpp"
+#include "two_index_transform.hpp"
 #include "ga/macdecls.h"
 #include "ga/ga-mpi.h"
 
