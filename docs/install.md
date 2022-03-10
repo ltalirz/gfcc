@@ -247,3 +247,10 @@ mkdir build && cd build
 CC=gcc-8 CXX=g++-8 FC=gfortran-8 cmake -DCMAKE_INSTALL_PREFIX=$GFCC_INSTALL_PATH ..
 make -j2 install
 ```
+
+Building via spack
+------------------
+```
+spack repo add ./spack
+spack install gfcc +cuda
+```
