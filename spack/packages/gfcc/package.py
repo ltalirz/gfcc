@@ -5,14 +5,10 @@
 
 from spack import *
 
-CMAKE_FLAGS = [ '-DUSE_CUDA=ON',
-                '-DLINALG_VENDOR=IntelMKL']
-
 class Gfcc(CMakePackage,CudaPackage):
     """Green's Function Coupled Cluster Library"""
 
     homepage = "https://github.com/spec-org/gfcc"
-
     url      = "https://github.com/spec-org/gfcc/archive/235216d80f25f36b5448d97f11daa5510282bac1.zip"
 
     tags = ['ecp', 'ecp-apps']
@@ -23,6 +19,7 @@ class Gfcc(CMakePackage,CudaPackage):
     depends_on('cmake@3.18:')
     depends_on('tamm +cuda', when='+cuda')
     depends_on('cuda@10.2:', when='+cuda')
+    conflicts('%gcc@11:', msg='Early gfcc version took 10x longer to compile with GCC 11.2.0')
 
     def cmake_args(self):
         args = [
