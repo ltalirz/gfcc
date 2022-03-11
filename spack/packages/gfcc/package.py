@@ -12,12 +12,12 @@ class Gfcc(CMakePackage,CudaPackage):
     """Green's Function Coupled Cluster Library"""
 
     homepage = "https://github.com/spec-org/gfcc"
-    url      = "https://github.com/ltalirz/gfcc/archive/235216d80f25f36b5448d97f11daa5510282bac1.zip"
+
+    url      = "https://github.com/spec-org/gfcc/archive/235216d80f25f36b5448d97f11daa5510282bac1.zip"
 
     tags = ['ecp', 'ecp-apps']
 
-    version('develop', sha256='78883400df68137e36a2decddfe561552dc3aaa2df7adc0b55b186325234847e',
-           )
+    version('develop', branch='develop')
 
     depends_on('tamm')
     depends_on('cmake@3.18:')

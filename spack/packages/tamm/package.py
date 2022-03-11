@@ -14,7 +14,7 @@ class Tamm(CMakePackage,CudaPackage):
 
     tags = ['ecp', 'ecp-apps']
 
-    version('develop', sha256='258c9b69846fac83f6c4655d944fbc4cf2969baa',)
+    version('develop', branch='develop')
 
     depends_on('mpi')
     depends_on('intel-oneapi-mkl +cluster')
