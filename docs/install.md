@@ -95,7 +95,7 @@ Step 4: Running the GFCC code
 =============================
 `cd $GFCC_SRC/build`   
 `export OMP_NUM_THREADS=1`
-`mpirun -n 4 ./test_stage/$GFCC_INSTALL_PATH/methods/GF_CCSD ../tests/co.json`
+`mpirun -n 4 $GFCC_INSTALL_PATH/bin/GF_CCSD $GFCC_SRC/tests/co.json`
 
 
 ---------------------------------------------------------------------
