@@ -10,6 +10,7 @@ class Gfcc(CMakePackage,CudaPackage):
 
     homepage = "https://github.com/spec-org/gfcc"
     url      = "https://github.com/spec-org/gfcc/archive/235216d80f25f36b5448d97f11daa5510282bac1.zip"
+    git      = "https://github.com/spec-org/gfcc.git"
 
     tags = ['ecp', 'ecp-apps']
 
@@ -19,7 +20,7 @@ class Gfcc(CMakePackage,CudaPackage):
     depends_on('cmake@3.18:')
     depends_on('tamm +cuda', when='+cuda')
     depends_on('cuda@10.2:', when='+cuda')
-    conflicts('%gcc@11:', msg='Early gfcc version took 10x longer to compile with GCC 11.2.0')
+    conflicts('%gcc@11:', msg='Early gfcc version took 10x longer to compile with GCC 11.2.0 under CentOS 7')
 
     def cmake_args(self):
         args = [

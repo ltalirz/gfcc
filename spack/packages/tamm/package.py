@@ -7,10 +7,14 @@ from spack import *
 
 
 class Tamm(CMakePackage,CudaPackage):
-    """Green's Function Coupled Cluster Library"""
+    """Tensor Algebra for Many-body Methods
+    
+    See https://doi.org/10.48550/arXiv.2201.01257 for further information.
+    """
 
     homepage = "https://github.com/spec-org/gfcc"
     url      = "https://github.com/spec-org/gfcc/archive/235216d80f25f36b5448d97f11daa5510282bac1.zip"
+    git      = "https://github.com/spec-org/gfcc.git"
 
     tags = ['ecp', 'ecp-apps']
 
