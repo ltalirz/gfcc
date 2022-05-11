@@ -93,7 +93,7 @@
   },
   "basis": {
     "basisset": "6-31++g*",
-    "sphcart": "spherical"
+    "gaussian_type": "spherical"
   },
   "common": {
     "maxiter": 50
